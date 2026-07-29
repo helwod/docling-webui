@@ -406,10 +406,9 @@ MAX_FILES_PER_BATCH=500
 HOST=0.0.0.0
 PORT=8000
 
-# Docling Conversion Defaults
-DOCLING_OCR_ENGINE=rapidocr
-DOCLING_TABLE_MODE=accurate
-DOCLING_IMAGE_EXPORT_MODE=referenced
+# 注：表格识别模式(docling_table_mode)、轮询间隔(poll_interval_seconds)、
+# OCR 引擎、图片导出模式等均为数据库存储的运行时设置，并非环境变量。
+# 容器首次启动由数据库播种默认值，之后可在前端「设置」页修改。
 ```
 
 ---
