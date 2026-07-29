@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -70,13 +71,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 反向代理子路径前缀（例如 /docling）。为空则保持根路径，向后兼容。
+_raw = os.getenv("APP_ROOT_PATH", "").strip().strip("/")
+ROOT_PATH = ("/" + _raw) if _raw else ""
+
 # Register routers
-app.include_router(batches.router)
-app.include_router(files.router)
-app.include_router(config_router.router)
+app.include_router(batches.router, prefix=ROOT_PATH)
+app.include_router(files.router, prefix=ROOT_PATH)
+app.include_router(config_router.router, prefix=ROOT_PATH)
 
 
-@app.get("/api/v1/health")
+@app.get(ROOT_PATH + "/api/v1/health")
 async def health_check():
     return {"status": "ok"}
 
@@ -99,10 +104,10 @@ def _serve_page(filename: str):
     return _handler
 
 
-app.get("/")(_serve_page("index.html"))
-app.get("/tasks")(_serve_page("tasks.html"))
-app.get("/task")(_serve_page("task.html"))
-app.get("/settings")(_serve_page("settings.html"))
+app.get(ROOT_PATH + "/")(_serve_page("index.html"))
+app.get(ROOT_PATH + "/tasks")(_serve_page("tasks.html"))
+app.get(ROOT_PATH + "/task")(_serve_page("task.html"))
+app.get(ROOT_PATH + "/settings")(_serve_page("settings.html"))
 
 # 静态资源（CSS/JS）
-app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="frontend-assets")
+app.mount(ROOT_PATH + "/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="frontend-assets")

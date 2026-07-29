@@ -63,13 +63,13 @@ function renderNav(active) {
   const nav = document.getElementById("nav");
   if (!nav) return;
   const items = [
-    { key: "upload", label: "上传并解析", href: "/" },
-    { key: "tasks", label: "任务列表", href: "/tasks" },
-    { key: "settings", label: "设置", href: "/settings" },
+    { key: "upload", label: "上传并解析", href: "." },
+    { key: "tasks", label: "任务列表", href: "tasks" },
+    { key: "settings", label: "设置", href: "settings" },
   ];
   nav.innerHTML =
     '<div class="nav-inner">' +
-    '<a class="brand" href="/">📄 Docling Serve Webui</a>' +
+    '<a class="brand" href=".">📄 Docling Serve Webui</a>' +
     '<nav class="nav-links">' +
     items
       .map(

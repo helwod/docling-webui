@@ -16,7 +16,7 @@ function renderRows(items) {
   if (!items.length) {
     tbody.innerHTML = "";
     document.getElementById("empty-hint").innerHTML =
-      '<div class="empty">暂无任务。请先到 <a href="/">上传并解析</a> 创建批次。</div>';
+      '<div class="empty">暂无任务。请先到 <a href=".">上传并解析</a> 创建批次。</div>';
     return;
   }
   document.getElementById("empty-hint").innerHTML = "";
@@ -37,7 +37,7 @@ function renderRows(items) {
         "<tr>" +
         `<td><input type="checkbox" class="row-cb" value="${bid}" ${isChecked} /></td>` +
         `<td>${statusBadge(b.status)}</td>` +
-        `<td><a class="tname-link" href="/task?batch_id=${encodeURIComponent(bid)}">${escapeHtml(b.name || "(未命名)")}</a></td>` +
+        `<td><a class="tname-link" href="task?batch_id=${encodeURIComponent(bid)}">${escapeHtml(b.name || "(未命名)")}</a></td>` +
         `<td>${done}/${total}</td>` +
         `<td class="muted">${fmtTime(b.created_at) || "—"}</td>` +
         `<td class="${paused ? "warn-text" : "muted"}">${paused ? "已暂停" : "—"}</td>` +

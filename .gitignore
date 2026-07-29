@@ -11,6 +11,11 @@ uploads/
 # ===== 日志 =====
 *.log
 server.log
+overview.md
+ssrf_listener.py
+PRD-Docling-WebUI.md
+.gitignore
+.dockerignore
 
 # ===== Python =====
 __pycache__/
@@ -20,8 +25,7 @@ venv/
 
 # ===== 内部 / 残留 =====
 .workbuddy/
-# 旧 backend 目录（已重命名为 src；因 IDE 文件监视句柄，运行期无法删除，留作空目录）
-backend/
+
 
 # ===== 操作系统 =====
 .DS_Store
@@ -30,4 +34,7 @@ Thumbs.db
 # ===== 测试遗留（非应用代码） =====
 make_bomb.py
 bomb.zip
+
+# ===== 残留空目录（合并 backend→src 后，内容已清空，非应用代码） =====
+backend/
 

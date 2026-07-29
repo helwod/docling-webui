@@ -1,6 +1,6 @@
 // Docling Serve WebUI - 前端 API 客户端
 // 后端统一信封 { code, data }，这里提取 data 返回。
-const API_BASE = "/api/v1";
+const API_BASE = "api/v1";
 
 async function request(method, path, opts = {}) {
   const { body, isForm = false } = opts;
