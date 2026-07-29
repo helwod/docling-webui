@@ -29,7 +29,7 @@ services:
     volumes:
       - docling-models:/root/.cache/huggingface   # 模型权重缓存，避免每次重建重新下载
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5001/health').status==200 else 1)"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:5001/health"]
       interval: 30s
       timeout: 5s
       retries: 3
