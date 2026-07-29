@@ -1,54 +1,68 @@
 # Docling Serve WebUI —— 一体编排（WebUI + Docling Serve）
 #
 # 启动：  docker compose up -d
-# 访问：  WebUI  http://localhost:8001
+# 访问：  WebUI       http://localhost:8001
 #         Docling UI  http://localhost:5001/ui
 #
 # 说明：
-#  - WebUI 通过内部服务名 http://docling:5001 自动连接 OCR 引擎
-#  - 想用 GPU 加速 OCR：把 docling 的 image 换成
+#  - 两个服务在同一 compose 网络，WebUI 通过服务名 http://docling-serve:5001 连接 OCR 引擎
+#  - 想用 GPU 加速 OCR：把 docling-serve 的 image 换成
 #    quay.io/docling-project/docling-serve-cu128（需宿主机装 nvidia-container-toolkit），
-#    并在 docling 服务下加 GPU 预留（见下方注释）
+#    并在 docling-serve 服务下加 GPU 预留（见文末注释）
 #  - LLM 配置可写进同目录 .env 文件，或直接在 environment 里改
+#  - webui 默认拉取已构建好的镜像 helwod/docling-webui；若想本地从源码构建，
+#    把 docling-webui 服务的 `image` 换成注释中的 `build: .` 即可。
+#    （注意：helwod/docling-webui 须包含最新代码修复，否则请先重新 build 并 push。）
+
+version: '3'
 
 services:
-  docling:
+  docling-serve:
     image: quay.io/docling-project/docling-serve
     container_name: docling-serve
+    restart: unless-stopped
     ports:
       - "5001:5001"
     environment:
-      DOCLING_SERVE_ENABLE_UI: "1"
-    # GPU 示例（取消注释以启用，需宿主支持）：
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+      - DOCLING_SERVE_ENABLE_UI=1
+      - GRADIO_MCP_SERVER=True
     volumes:
       - docling-models:/root/.cache/huggingface   # 模型权重缓存，避免每次重建重新下载
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5001/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - docling-net
 
-  webui:
-    build: .
+  docling-webui:
+    image: helwod/docling-webui
+    # 本地从源码构建时改用（二选一）：
+    # build: .
     container_name: docling-webui
+    restart: unless-stopped
     ports:
       - "8001:8001"
     environment:
       # 指向 compose 内部的 Docling 服务（同一网络，无需改）
-      DOCLING_BASE_URL: "http://docling:5001"
+      - DOCLING_BASE_URL=http://docling-serve:5001
       # LLM（可选，按需填写；或写入同目录 .env 由 compose 自动读取）
-      LLM_API_KEY: "${LLM_API_KEY:-your-api-key-here}"
-      LLM_BASE_URL: "${LLM_BASE_URL:-https://api.openai.com/v1}"
-      LLM_MODEL: "${LLM_MODEL:-gpt-4o-mini}"
+      - LLM_API_KEY=${LLM_API_KEY:-your-api-key-here}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
     depends_on:
-      - docling
+      - docling-serve
     volumes:
       - webui-data:/app/src/data
       - webui-uploads:/app/src/uploads
-    restart: unless-stopped
+    networks:
+      - docling-net
+
+networks:
+  docling-net:
+    driver: bridge
 
 volumes:
   docling-models:
