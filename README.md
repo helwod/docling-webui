@@ -142,23 +142,43 @@ docker run -d -p 8001:8001 \
 
 ## 反向代理 / 子路径部署
 
-前端所有资源引用和接口调用都已经是**相对路径**了，所以你可以把它挂在任意子路径下，比如 `https://your-site.com/docling/`。
+前端所有资源引用（CSS/JS）和接口调用（含 PDF 预览图片）都已经是**相对路径**了，所以可以挂在任意子路径下，比如 `https://your-site.com/docling/`。后端本身也做了兼容处理：子路径模式下会自动注入 `<base href="/docling/">`、并把 `/docling`（末尾无斜杠）重定向到 `/docling/`，避免资源 404。
 
-**最简单的方式**——Nginx 剥离前缀，后端照常以根路径启动：
+> **启动必须绑定 `0.0.0.0`**：当你把程序放在容器里、或用独立反向代理访问时，务必让服务监听 `0.0.0.0` 而不是默认的 `127.0.0.1`，否则代理侧会连不上（表现为整个页面、CSS、JS、图片全打不开）。
+> ```bash
+> # 推荐：显式指定
+> uvicorn app.main:app --host 0.0.0.0 --port 8001
+> # 或者直接（内部已默认绑定 0.0.0.0:8001）
+> python -m app.main
+> ```
+> Docker 镜像的 `CMD` 已经是 `--host 0.0.0.0`，`docker run -p 8001:8001 ...` 即可。
+
+反向代理有两种配置，**关键是让 `APP_ROOT_PATH` 与代理行为一致**：
+
+**方式 A（推荐）：Nginx 剥离前缀，后端照常以根路径启动**
 
 ```nginx
 location /docling/ {
-    proxy_pass http://127.0.0.1:8001/;    # 注意结尾的 /
+    proxy_pass http://127.0.0.1:8001/;    # 注意结尾的 /，它负责把 /docling 前缀去掉
 }
 ```
+此时后端**不需要**设 `APP_ROOT_PATH`（留空即可）。浏览器访问 `/docling/...` → 代理去掉 `/docling` → 后端收到 `/...`，相对路径自动拼回 `/docling/...`，一切正常。
 
-如果你的反代**不能**剥离前缀（`proxy_pass` 后面没有 `/`），那就告诉后端自己的前缀：
+**方式 B：代理不剥离前缀，告诉后端自己的前缀**
 
-```bash
-APP_ROOT_PATH=/docling uvicorn app.main:app --port 8001
+如果你的 `proxy_pass` 后面没有 `/`（即不剥离前缀），就必须让后端知道自己挂在哪个子路径下：
+
+```nginx
+location /docling/ {
+    proxy_pass http://127.0.0.1:8001;     # 注意：没有结尾的 /，/docling 会被原样转发
+}
 ```
+```bash
+APP_ROOT_PATH=/docling uvicorn app.main:app --host 0.0.0.0 --port 8001
+```
+`APP_ROOT_PATH` 的值必须和代理里的子路径**完全相同**（这里是 `/docling`）。
 
-两种方式效果一样，选你顺手的那种。
+> ⚠️ **最常见的坑**：代理不剥离前缀（方式 B 的 nginx 写法）却**没设** `APP_ROOT_PATH`。这时后端只在 `/` 上注册路由，收到 `/docling/...` 直接 404，于是页面、CSS、JS、图片全打不开——看起来就是"CSS 和 JS 都有问题"。解决办法二选一：要么改成方式 A（剥离前缀、不设变量），要么保持方式 B 并补上 `APP_ROOT_PATH=/docling`。
 
 > 新增页面或 JS 时记得保持相对路径引用，别写 `/assets/...` 或 `/api/...` 这种绝对路径，否则子路径部署会断掉。
 

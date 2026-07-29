@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.db.database import get_db, close_db
@@ -99,7 +99,15 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent
 
 def _serve_page(filename: str):
     async def _handler():
-        return FileResponse(FRONTEND_DIR / filename, media_type="text/html; charset=utf-8")
+        html = (FRONTEND_DIR / filename).read_text(encoding="utf-8")
+        # 子路径部署（APP_ROOT_PATH 非空）时注入 <base href="/<root>/">，
+        # 让页面内所有相对引用（CSS/JS/API/导航）都基于该子路径解析，
+        # 避免「子路径末尾无斜杠」或页面层级不同导致的资源 404。
+        if ROOT_PATH:
+            base_tag = f'<base href="{ROOT_PATH}/">'
+            if "<head>" in html:
+                html = html.replace("<head>", f"<head>\n  {base_tag}", 1)
+        return Response(content=html, media_type="text/html; charset=utf-8")
 
     return _handler
 
@@ -109,5 +117,21 @@ app.get(ROOT_PATH + "/tasks")(_serve_page("tasks.html"))
 app.get(ROOT_PATH + "/task")(_serve_page("task.html"))
 app.get(ROOT_PATH + "/settings")(_serve_page("settings.html"))
 
+# 子路径部署时，访问 /<root>（无末尾斜杠）自动补斜杠，保证相对引用解析正确
+if ROOT_PATH:
+    @app.get(ROOT_PATH)
+    async def _redirect_to_root():
+        return RedirectResponse(url=ROOT_PATH + "/")
+
 # 静态资源（CSS/JS）
 app.mount(ROOT_PATH + "/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="frontend-assets")
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    # 直接 `python -m app.main` 启动：默认绑定 0.0.0.0:8001，便于容器/反代访问。
+    # 可用环境变量 HOST / PORT 覆盖（与 Dockerfile 的 PORT 一致）。
+    _host = os.getenv("HOST", settings.host)
+    _port = int(os.getenv("PORT", "8001"))
+    uvicorn.run(app, host=_host, port=_port)
