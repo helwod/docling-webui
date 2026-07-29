@@ -1,0 +1,272 @@
+/* ==========================================================================
+   Docling WebUI - Design Token CSS
+   Design System: Linear-inspired Dark-first Product UI
+   Designer: 颜好看 | Date: 2026-07-22
+   Three Axes: Variance=4 / Motion=3 / Density=5
+   ========================================================================== */
+
+/* Google Fonts Import */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ==========================================================================
+   A1 - Identity Tokens (Brand DNA)
+   ========================================================================== */
+:root {
+  /* Surface Layer */
+  --bg: #0D1117;
+  --surface: #161B22;
+  --surface-warm: #21262D;
+
+  /* Foreground Layer */
+  --fg: #F0F6FC;
+  --fg-2: #D0D6E0;
+  --muted: #8B949E;
+  --meta: #484F58;
+
+  /* Border Layer */
+  --border: #30363D;
+  --border-soft: rgba(255, 255, 255, 0.06);
+
+  /* Accent (Blue - professional, trustworthy, not AI-default indigo) */
+  --accent: #2563EB;
+  --accent-on: #FFFFFF;
+  --accent-hover: #1D4ED8;
+  --accent-active: #1E40AF;
+
+  /* Typography - Fonts */
+  --font-display: "Inter", "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: "Inter", "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+
+  /* Layout - Structure */
+  --container-max: 1440px;
+  --container-gutter-desktop: 32px;
+  --container-gutter-tablet: 24px;
+  --container-gutter-phone: 16px;
+  --section-y-desktop: 80px;
+  --section-y-tablet: 48px;
+  --section-y-phone: 32px;
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 64px;
+}
+
+/* ==========================================================================
+   A2 - Structure Tokens (Layout System)
+   ========================================================================== */
+:root {
+  /* Spacing System (4px grid) */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* Radius System */
+  --radius-sm: 6px;       /* Badges, tags, small buttons */
+  --radius-md: 8px;       /* Buttons, inputs */
+  --radius-lg: 12px;      /* Cards */
+  --radius-xl: 16px;      /* Modals */
+  --radius-pill: 9999px;  /* Avatars, pills */
+
+  /* Elevation System */
+  --elev-flat: none;
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-raised: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
+  --elev-overlay: 0 8px 24px rgba(0, 0, 0, 0.24), 0 2px 8px rgba(0, 0, 0, 0.16);
+
+  /* Focus Ring */
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.4);
+
+  /* Motion */
+  --motion-fast: 100ms;
+  --motion-base: 150ms;
+  --motion-slow: 200ms;
+  --motion-page: 300ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ==========================================================================
+   A2 - Semantic Colors
+   ========================================================================== */
+:root {
+  --success: #3FB950;
+  --success-bg: rgba(63, 185, 80, 0.12);
+  --warn: #D29922;
+  --warn-bg: rgba(210, 153, 34, 0.12);
+  --danger: #F85149;
+  --danger-bg: rgba(248, 81, 73, 0.12);
+  --info: #2563EB;
+  --info-bg: rgba(37, 99, 235, 0.12);
+}
+
+/* ==========================================================================
+   B - Slot Tokens (Component Variants)
+   ========================================================================== */
+:root {
+  /* Button - Primary */
+  --btn-primary-bg: var(--accent);
+  --btn-primary-text: var(--accent-on);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-active: var(--accent-active);
+  --btn-primary-disabled-bg: rgba(37, 99, 235, 0.4);
+  --btn-primary-disabled-text: rgba(255, 255, 255, 0.6);
+
+  /* Button - Secondary */
+  --btn-secondary-bg: var(--surface-warm);
+  --btn-secondary-text: var(--fg);
+  --btn-secondary-hover: rgba(255, 255, 255, 0.08);
+  --btn-secondary-border: var(--border);
+
+  /* Button - Ghost */
+  --btn-ghost-bg: transparent;
+  --btn-ghost-text: var(--muted);
+  --btn-ghost-hover: rgba(255, 255, 255, 0.06);
+
+  /* Button - Danger */
+  --btn-danger-bg: var(--danger);
+  --btn-danger-text: #FFFFFF;
+  --btn-danger-hover: #DA3633;
+  --btn-danger-active: #B62324;
+
+  /* Input */
+  --input-bg: var(--surface);
+  --input-border: var(--border);
+  --input-text: var(--fg);
+  --input-placeholder: var(--meta);
+  --input-focus-border: var(--accent);
+  --input-focus-ring: var(--focus-ring);
+  --input-error-border: var(--danger);
+  --input-error-ring: 0 0 0 3px rgba(248, 81, 73, 0.3);
+  --input-disabled-bg: rgba(255, 255, 255, 0.03);
+  --input-disabled-text: var(--meta);
+
+  /* Card */
+  --card-bg: var(--surface);
+  --card-border: var(--border);
+  --card-radius: var(--radius-lg);
+  --card-padding: var(--space-5);
+  --card-hover-border: var(--meta);
+
+  /* Badge */
+  --badge-radius: var(--radius-sm);
+  --badge-padding-x: var(--space-2);
+  --badge-padding-y: var(--space-1);
+
+  /* Table */
+  --table-header-bg: var(--surface-warm);
+  --table-row-hover: rgba(255, 255, 255, 0.03);
+  --table-row-selected: rgba(37, 99, 235, 0.08);
+  --table-border: var(--border-soft);
+
+  /* Navigation - Sidebar */
+  --nav-bg: var(--bg);
+  --nav-item-active: rgba(37, 99, 235, 0.12);
+  --nav-item-hover: rgba(255, 255, 255, 0.06);
+  --nav-item-text: var(--muted);
+  --nav-item-active-text: var(--fg);
+
+  /* Code Block */
+  --code-bg: rgba(255, 255, 255, 0.04);
+  --code-border: var(--border-soft);
+}
+
+/* ==========================================================================
+   Typography Scale (8 levels)
+   ========================================================================== */
+:root {
+  --text-xs: 0.75rem;    /* 12px */
+  --text-sm: 0.875rem;   /* 14px */
+  --text-base: 1rem;     /* 16px */
+  --text-lg: 1.125rem;   /* 18px */
+  --text-xl: 1.25rem;    /* 20px */
+  --text-2xl: 1.5rem;    /* 24px */
+  --text-3xl: 2rem;      /* 32px */
+  --text-4xl: 2.5rem;    /* 40px */
+
+  --leading-body: 1.5;
+  --leading-tight: 1.25;
+  --leading-display: 1.1;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.025em;
+  --tracking-caps: 0.06em;
+}
+
+/* ==========================================================================
+   Z-Index Scale
+   ========================================================================== */
+:root {
+  --z-base: 0;
+  --z-dropdown: 1000;
+  --z-sticky: 1100;
+  --z-overlay: 1200;
+  --z-modal: 1300;
+  --z-toast: 1400;
+  --z-tooltip: 1500;
+}
+
+/* ==========================================================================
+   Light Theme Override (optional toggle)
+   ========================================================================== */
+:root[data-theme="light"] {
+  --bg: #F9FAFB;
+  --surface: #FFFFFF;
+  --surface-warm: #F3F4F6;
+
+  --fg: #111827;
+  --fg-2: #374151;
+  --muted: #6B7280;
+  --meta: #9CA3AF;
+
+  --border: #E5E7EB;
+  --border-soft: #F3F4F6;
+
+  --accent-hover: #1D4ED8;
+  --accent-active: #1E40AF;
+
+  --success: #16A34A;
+  --success-bg: rgba(22, 163, 74, 0.1);
+  --warn: #D97706;
+  --warn-bg: rgba(217, 119, 6, 0.1);
+  --danger: #DC2626;
+  --danger-bg: rgba(220, 38, 38, 0.1);
+  --info: #2563EB;
+  --info-bg: rgba(37, 99, 235, 0.08);
+
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-raised: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 8px rgba(0, 0, 0, 0.06);
+  --elev-overlay: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.3);
+
+  --input-disabled-bg: #F9FAFB;
+  --btn-secondary-hover: #F3F4F6;
+  --btn-ghost-hover: #F3F4F6;
+  --nav-item-hover: #F3F4F6;
+  --table-row-hover: #F9FAFB;
+  --code-bg: #F3F4F6;
+}
+
+/* ==========================================================================
+   Reduced Motion
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>上传并解析 - Docling Serve</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <header class="topbar"><div id="nav"></div></header>
+  <main class="container">
+    <h1 class="page-title">上传并解析</h1>
+    <p class="page-sub">上传图片（可多选）或单个 ZIP 压缩包，创建后自动加入处理队列。</p>
+
+    <div class="card">
+      <div class="dropzone" id="dropzone">
+        <p><strong>点击选择</strong> 或拖拽文件到此处</p>
+        <p class="hint">支持：图片 / 文档 / 单个 ZIP 压缩包</p>
+        <input type="file" id="file-input" multiple
+          accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.webp,.gif,.pdf,.docx,.pptx,.html,.txt,.csv,.zip"
+          style="display:none" />
+      </div>
+      <ul class="file-list" id="file-list"></ul>
+
+      <label class="field" style="margin-top:16px">
+        <span>批次名称（可选）</span>
+        <input type="text" id="batch-name" placeholder="留空则按首文件自动命名" />
+      </label>
+
+      <div class="checkbox-line">
+        <input type="checkbox" id="enable-llm" checked />
+        <label for="enable-llm" style="margin:0;font-weight:600">启用 LLM 表格整理</label>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="submit-btn">创建批次并开始处理</button>
+        <a class="btn" href="/tasks">查看任务列表</a>
+      </div>
+      <div id="msg"></div>
+    </div>
+  </main>
+
+  <script src="/assets/js/common.js"></script>
+  <script src="/assets/js/api.js"></script>
+  <script src="/assets/js/upload.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# 排除不需要打进镜像的文件，减小镜像体积、避免泄露机密
+src/.env
+src/data/
+src/uploads/
+src/**/__pycache__/
+src/**/*.pyc
+src/*.log
+**/.venv/
+**/venv/
+*.md
+docker-compose.yml
+Dockerfile
+.dockerignore

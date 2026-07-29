@@ -1,0 +1,33 @@
+# ===== Secrets（绝不入库） =====
+.env
+
+# ===== 运行时数据 & 上传文件 =====
+data/
+uploads/
+*.db
+*.db-shm
+*.db-wal
+
+# ===== 日志 =====
+*.log
+server.log
+
+# ===== Python =====
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ===== 内部 / 残留 =====
+.workbuddy/
+# 旧 backend 目录（已重命名为 src；因 IDE 文件监视句柄，运行期无法删除，留作空目录）
+backend/
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+
+# ===== 测试遗留（非应用代码） =====
+make_bomb.py
+bomb.zip
+

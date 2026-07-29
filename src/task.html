@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>任务详情 - Docling Serve</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <header class="topbar"><div id="nav"></div></header>
+  <main class="container">
+    <div class="detail-head">
+      <div>
+        <h1 class="page-title" id="batch-title">任务详情</h1>
+        <div class="detail-meta" id="batch-meta"></div>
+      </div>
+      <a class="btn" href="/tasks">← 返回任务列表</a>
+    </div>
+
+    <div class="card">
+      <h2>批次汇总表（每行 = 一个文件）</h2>
+      <div class="summary-scroll"><div id="summary-table"></div></div>
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn btn-primary btn-sm" id="export-csv">导出汇总表 CSV</button>
+        <button class="btn btn-sm" id="export-html">导出汇总表 HTML</button>
+        <button class="btn btn-sm" id="rerun-table">重新生成汇总表</button>
+      </div>
+      <div id="summary-msg" class="hint"></div>
+    </div>
+
+    <div class="card">
+      <h2>文件清单与单文件详情</h2>
+      <div class="filelist" id="file-list">
+        <span class="muted">（加载中…）</span>
+      </div>
+
+      <div class="two-col" style="margin-top:16px">
+        <div class="col img-col">
+          <h3 id="img-col-title">原始图片</h3>
+          <div class="img-wrap" id="image-box">
+            <span class="muted">未选择文件</span>
+          </div>
+          <div class="hint" id="img-hint"></div>
+        </div>
+        <div class="col">
+          <h3>识别字段 <span class="muted" style="font-weight:400">（点击右侧字段 → 在左图高亮其位置）</span></h3>
+          <div class="ocr-fields" id="ocr-fields"><span class="muted">—</span></div>
+          <details class="mt">
+            <summary>OCR 原文（Markdown）</summary>
+            <pre class="ocr" id="ocr-box">—</pre>
+          </details>
+        </div>
+      </div>
+
+      <h3>本文件对应行（来自汇总表）</h3>
+      <div class="summary-scroll" style="max-height:300px"><div id="row-table"></div></div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-sm" id="export-file">导出该文件</button>
+        <button class="btn btn-sm" id="rerun-ocr">重新识别 (OCR)</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="/assets/js/common.js"></script>
+  <script src="/assets/js/api.js"></script>
+  <script src="/assets/js/task.js"></script>
+</body>
+</html>

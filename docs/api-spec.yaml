@@ -1,0 +1,705 @@
+openapi: 3.0.3
+info:
+  title: Docling Serve WebUI API
+  version: 1.0.0
+  description: |
+    WebUI backend API for batch image OCR processing via Docling Serve
+    and LLM-powered table data extraction.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+
+paths:
+  /batches:
+    post:
+      summary: Create a new batch with file uploads
+      description: Upload individual image files or a ZIP archive to create a new processing batch.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - files
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: One or more image files, or a single ZIP archive.
+                name:
+                  type: string
+                  description: Optional custom batch name. Defaults to filename or "Batch {timestamp}".
+      responses:
+        '201':
+          description: Batch created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+
+    get:
+      summary: List all batches
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Status'
+        - $ref: '#/components/parameters/Sort'
+      responses:
+        '200':
+          description: Paginated list of batches
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchListResponse'
+
+  /batches/{batchId}:
+    get:
+      summary: Get batch detail
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Batch detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete a batch (soft delete)
+      description: Soft-deletes the batch and all associated files. Original files on disk are also removed.
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '204':
+          description: Batch deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /batches/{batchId}/files:
+    get:
+      summary: List files in a batch
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Paginated list of files in the batch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /batches/{batchId}/files/{fileId}:
+    get:
+      summary: Get file detail (OCR and LLM results)
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: File detail with OCR and LLM results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /batches/{batchId}/process:
+    post:
+      summary: Trigger OCR and LLM processing for a batch
+      description: |
+        Starts async processing of all pending files in the batch.
+        Each file is sent to Docling Serve for OCR, then LLM extracts table data.
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enable_llm:
+                  type: boolean
+                  default: true
+                  description: Whether to run LLM table extraction after OCR.
+                ocr_engine:
+                  type: string
+                  enum: [easyocr, tesseract, rapidocr]
+                  description: Override default OCR engine.
+                table_mode:
+                  type: string
+                  enum: [fast, accurate]
+                  description: Override default table structure mode.
+      responses:
+        '202':
+          description: Processing started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Batch already processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /batches/{batchId}/status:
+    get:
+      summary: Get batch processing status
+      description: Returns aggregated processing progress for all files in the batch.
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Processing status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /files/{fileId}/llm:
+    post:
+      summary: Re-run LLM table extraction for a single file
+      description: Re-processes the OCR result through LLM to extract table data. Useful for retrying failed LLM calls.
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model:
+                  type: string
+                  description: Override LLM model for this request.
+      responses:
+        '202':
+          description: LLM processing started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: File OCR not completed yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      summary: Get LLM result for a single file
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: LLM extraction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LLMResultResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /batches/{batchId}/export:
+    get:
+      summary: Export entire batch as ZIP
+      description: |
+        Downloads a ZIP archive containing:
+        - original_images/ : original uploaded files
+        - ocr_results/ : OCR markdown and JSON for each file
+        - llm_tables/ : LLM-extracted table data (JSON + CSV) for each file
+        - summary.json : batch summary metadata
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv, both]
+            default: both
+          description: Format for LLM table export.
+      responses:
+        '200':
+          description: ZIP file download
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /files/{fileId}/export:
+    get:
+      summary: Export single file results as ZIP
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv, both]
+            default: both
+      responses:
+        '200':
+          description: ZIP file download
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /files/{fileId}/image:
+    get:
+      summary: Get original image file
+      description: Serves the original uploaded image for preview in the browser.
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: Image file
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /config:
+    get:
+      summary: Get system configuration
+      description: Returns current system settings (Docling URL, LLM model, etc). API key is never returned.
+      responses:
+        '200':
+          description: System configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+
+    put:
+      summary: Update system configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigUpdate'
+      responses:
+        '200':
+          description: Configuration updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+
+components:
+  parameters:
+    BatchId:
+      name: batchId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Batch UUID
+
+    FileId:
+      name: fileId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: File UUID
+
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    Status:
+      name: status
+      in: query
+      schema:
+        type: string
+        enum: [created, processing, completed, failed]
+      description: Filter by batch status
+
+    Sort:
+      name: sort
+      in: query
+      schema:
+        type: string
+        enum: [created_at, updated_at, name]
+        default: created_at
+      description: Sort field
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    PayloadTooLarge:
+      description: File too large
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    UnsupportedMediaType:
+      description: Unsupported file type
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: integer
+          description: Error code (non-zero)
+        message:
+          type: string
+          description: Human-readable error description
+        details:
+          type: object
+          description: Additional error details
+
+    BatchResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            source_type:
+              type: string
+              enum: [zip, files]
+            status:
+              type: string
+              enum: [created, processing, completed, failed]
+            total_files:
+              type: integer
+            processed_files:
+              type: integer
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+    BatchListResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/BatchResponse/data'
+            total:
+              type: integer
+            page:
+              type: integer
+            limit:
+              type: integer
+            has_more:
+              type: boolean
+
+    FileDetailResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            batch_id:
+              type: string
+              format: uuid
+            original_filename:
+              type: string
+            file_size:
+              type: integer
+            file_type:
+              type: string
+            ocr_status:
+              type: string
+              enum: [pending, processing, completed, failed]
+            ocr_md_content:
+              type: string
+              nullable: true
+              description: OCR result in Markdown format
+            ocr_html_content:
+              type: string
+              nullable: true
+              description: OCR result in HTML format
+            ocr_processing_time:
+              type: number
+              nullable: true
+            ocr_error:
+              type: string
+              nullable: true
+            llm_status:
+              type: string
+              enum: [pending, processing, completed, failed, skipped]
+            llm_result:
+              type: object
+              nullable: true
+              description: LLM-extracted table data (parsed JSON object)
+              properties:
+                tables:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      table_index:
+                        type: integer
+                      headers:
+                        type: array
+                        items:
+                          type: string
+                      rows:
+                        type: array
+                        items:
+                          type: object
+            llm_model:
+              type: string
+              nullable: true
+            llm_error:
+              type: string
+              nullable: true
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+    FileListResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  original_filename:
+                    type: string
+                  file_size:
+                    type: integer
+                  file_type:
+                    type: string
+                  ocr_status:
+                    type: string
+                  llm_status:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+            total:
+              type: integer
+            page:
+              type: integer
+            limit:
+              type: integer
+            has_more:
+              type: boolean
+
+    ProcessStatusResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        data:
+          type: object
+          properties:
+            batch_id:
+              type: string
+              format: uuid
+            batch_status:
+              type: string
+              enum: [created, processing, completed, failed]
+            total_files:
+              type: integer
+            ocr_completed:
+              type: integer
+            ocr_failed:
+              type: integer
+            ocr_pending:
+              type: integer
+            llm_completed:
+              type: integer
+            llm_failed:
+              type: integer
+            llm_pending:
+              type: integer
+            progress_percent:
+              type: number
+              description: Overall progress percentage (0-100)
+
+    LLMResultResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        data:
+          type: object
+          properties:
+            file_id:
+              type: string
+              format: uuid
+            llm_status:
+              type: string
+            llm_result:
+              type: object
+              nullable: true
+              description: Parsed table data
+            llm_model:
+              type: string
+              nullable: true
+            llm_error:
+              type: string
+              nullable: true
+
+    ConfigResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        data:
+          type: object
+          properties:
+            docling_base_url:
+              type: string
+            llm_base_url:
+              type: string
+            llm_model:
+              type: string
+            llm_api_key_set:
+              type: boolean
+              description: Whether API key is configured (never returns the actual key)
+            docling_ocr_engine:
+              type: string
+            docling_table_mode:
+              type: string
+            docling_image_export_mode:
+              type: string
+            max_concurrent_conversions:
+              type: integer
+            poll_interval_seconds:
+              type: integer
+
+    ConfigUpdate:
+      type: object
+      properties:
+        docling_base_url:
+          type: string
+        llm_base_url:
+          type: string
+        llm_model:
+          type: string
+        llm_api_key:
+          type: string
+          description: New API key (optional, only set if provided)
+        docling_ocr_engine:
+          type: string
+          enum: [easyocr, tesseract, rapidocr]
+        docling_table_mode:
+          type: string
+          enum: [fast, accurate]
+        docling_image_export_mode:
+          type: string
+          enum: [placeholder, embedded, referenced]
+        max_concurrent_conversions:
+          type: integer
+          minimum: 1
+          maximum: 20
+        poll_interval_seconds:
+          type: integer
+          minimum: 1
+          maximum: 30

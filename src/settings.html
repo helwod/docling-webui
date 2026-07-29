@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>设置 - Docling Serve</title>
+  <link rel="stylesheet" href="/assets/css/style.css" />
+</head>
+<body>
+  <header class="topbar"><div id="nav"></div></header>
+  <main class="container">
+    <h1 class="page-title">设置</h1>
+    <p class="page-sub">配置 Docling Serve 地址与 LLM（OpenAI 兼容）参数。</p>
+
+    <div class="card">
+      <div class="row">
+        <label class="field">
+          <span>Docling Serve 地址</span>
+          <div class="row" style="align-items:flex-end">
+            <input type="text" id="docling_url" placeholder="http://10.0.0.22:5001" style="flex:3" />
+            <button class="btn" id="test-docling" type="button" style="flex:1">测试 Docling</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>LLM Base URL</span>
+          <input type="text" id="llm_base_url" placeholder="https://api.openai.com/v1" />
+        </label>
+      </div>
+
+      <label class="field">
+        <span>LLM 模型</span>
+        <div class="row" style="align-items:flex-end">
+          <select id="model-select" style="flex:1">
+            <option value="">（先点『获取模型列表』）</option>
+          </select>
+          <button class="btn" id="fetch-models" type="button" style="flex:0 0 auto">获取模型列表</button>
+        </div>
+      </label>
+
+      <label class="field">
+        <span>LLM API Key</span>
+        <input type="password" id="llm_api_key" placeholder="留空则不修改已保存的 Key" />
+      </label>
+
+      <div class="row">
+        <label class="field">
+          <span>OCR 引擎</span>
+          <select id="ocr_engine">
+            <option value="rapidocr">rapidocr</option>
+            <option value="easyocr">easyocr</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>表格模式</span>
+          <select id="table_mode">
+            <option value="accurate">accurate</option>
+            <option value="fast">fast</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>图片导出模式</span>
+          <select id="image_mode">
+            <option value="referenced">referenced</option>
+            <option value="placeholder">placeholder</option>
+            <option value="embedded">embedded</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="row">
+        <label class="field">
+          <span>最大并发转换数</span>
+          <input type="number" id="max_conc" value="5" min="1" />
+        </label>
+        <label class="field">
+          <span>状态轮询间隔（秒）</span>
+          <input type="number" id="poll" value="2" min="1" />
+        </label>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn" id="load-btn">重新加载</button>
+        <button class="btn btn-primary" id="save-btn">保存设置</button>
+        <button class="btn" id="test-btn">测试连接</button>
+      </div>
+      <div id="msg"></div>
+    </div>
+  </main>
+
+  <script src="/assets/js/common.js"></script>
+  <script src="/assets/js/api.js"></script>
+  <script src="/assets/js/settings.js"></script>
+</body>
+</html>
