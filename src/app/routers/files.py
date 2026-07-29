@@ -308,7 +308,7 @@ def _render_pdf_pages(stored_path: str, file_id: str):
         total = doc.page_count
         doc.close()
         pages = [
-            {"page_no": n, "url": f"/api/v1/files/{file_id}/page/{n}"}
+            {"page_no": n, "url": f"api/v1/files/{file_id}/page/{n}"}
             for n in range(1, total + 1)
         ]
         return pages, total
@@ -343,7 +343,7 @@ async def get_file_pages(file_id: str, repos=Depends(get_repos)):
     """返回文件预览页列表。
 
     - 非 PDF：is_pdf=false，pages=[]（前端退回单图预览）。
-    - PDF：is_pdf=true，pages=[{page_no, url}]，url 指向 /{id}/page/{n}。
+    - PDF：is_pdf=true，pages=[{page_no, url}]，url 为相对地址 api/v1/files/{id}/page/{n}（配合反向代理子路径自动解析，不含前导 /）。
     """
     file_data = await repos["file_repo"].get_by_id(file_id)
     if not file_data:
