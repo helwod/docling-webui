@@ -34,7 +34,8 @@
         <span class="muted">（加载中…）</span>
       </div>
 
-      <div class="two-col" style="margin-top:16px">
+      <div class="three-col" style="margin-top:16px">
+        <!-- 左：图片预览 -->
         <div class="col img-col">
           <h3 id="img-col-title">原始图片</h3>
           <div class="img-wrap" id="image-box">
@@ -42,13 +43,23 @@
           </div>
           <div class="hint" id="img-hint"></div>
         </div>
+
+        <!-- 中：OCR 字段定位（带坐标的原始识别片段） -->
         <div class="col">
-          <h3>识别字段 <span class="muted" style="font-weight:400">（点击右侧字段 → 在左图高亮其位置）</span></h3>
+          <h3>OCR 字段定位 <span class="muted" style="font-weight:400">（点击 → 左图高亮其位置）</span></h3>
           <div class="ocr-fields" id="ocr-fields"><span class="muted">—</span></div>
           <details class="mt">
             <summary>OCR 原文（Markdown）</summary>
             <pre class="ocr" id="ocr-box">—</pre>
           </details>
+        </div>
+
+        <!-- 右：识别的字段（来自汇总表结构化结果，点击 → 映射 OCR 定位并在左图高亮） -->
+        <div class="col">
+          <h3>识别的字段 <span class="muted" style="font-weight:400">（点击 → 在左图与中间定位一致高亮）</span></h3>
+          <div class="recognized-fields" id="recognized-fields">
+            <span class="muted">（汇总表生成后，本文件的结构化字段将显示在此）</span>
+          </div>
         </div>
       </div>
 
@@ -57,6 +68,22 @@
       <div class="btn-row" style="margin-top:12px">
         <button class="btn btn-sm" id="export-file">导出该文件</button>
         <button class="btn btn-sm" id="rerun-ocr">重新识别 (OCR)</button>
+      </div>
+    </div>
+
+    <!-- LLM 会话：基于当前文件上下文多轮对话 -->
+    <div class="card">
+      <h2>LLM 会话 <span class="muted" style="font-weight:400;font-size:13px">（基于当前文件 OCR 原文，可修改调整并继续上下文）</span></h2>
+      <div class="chat-box" id="chat-box">
+        <div class="chat-empty" id="chat-empty">尚未开始对话。在下方输入问题，例如「提取这份文档的甲方、乙方、合同金额」。</div>
+      </div>
+      <div class="chat-input-row">
+        <textarea id="chat-input" class="chat-input" rows="2" placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
+        <div class="btn-row chat-actions">
+          <button class="btn btn-primary btn-sm" id="chat-send">发送</button>
+          <button class="btn btn-sm" id="chat-clear">清空</button>
+          <span class="hint" id="chat-hint"></span>
+        </div>
       </div>
     </div>
   </main>

@@ -8,6 +8,9 @@ let currentSegments = []; // 当前文件的识别字段（带 bbox）
 let currentPages = []; // 当前文件预览页列表 [{page_no, url}]
 let isPdf = false; // 当前文件是否为 PDF
 let loadedOcrStatus = null; // 上次加载详情时的 OCR 状态（用于自动刷新判断）
+let recognizedMap = []; // 当前文件识别字段 [{key, value}]，用于右侧点击映射
+let chatHistory = []; // 当前文件的 LLM 会话历史
+let chatEditIndex = null; // 正在修改的用户消息 seq（null 表示普通发送）
 
 const titleEl = document.getElementById("batch-title");
 const metaEl = document.getElementById("batch-meta");
@@ -19,6 +22,7 @@ const imgHint = document.getElementById("img-hint");
 const ocrFields = document.getElementById("ocr-fields");
 const rowTable = document.getElementById("row-table");
 const ocrBox = document.getElementById("ocr-box");
+const recognizedEl = document.getElementById("recognized-fields");
 
 function parseBatchTable(raw) {
   if (!raw) return null;
@@ -146,6 +150,7 @@ function selectFile(fid) {
   currentFileId = fid;
   renderFileList();
   loadFileDetail(fid, true);
+  loadChat();
 }
 
 // 渲染预览页：单图或多页 PDF 都统一为「每页一个 .img-stage + overlay」
@@ -217,6 +222,91 @@ function renderFields(segments) {
   });
 }
 
+// 在中间 OCR 字段列表里高亮指定 idx 的片段（与右侧识别字段联动）
+function markMiddleField(idx) {
+  ocrFields.querySelectorAll(".ocr-field").forEach((x) => x.classList.remove("active"));
+  const el = ocrFields.querySelector('.ocr-field[data-idx="' + idx + '"]');
+  if (el) {
+    el.classList.add("active");
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+
+// 在 OCR 片段里为某个「识别字段值」找最匹配的片段（子串双向匹配，取最长）
+function mapValueToSegment(value) {
+  const v = (value || "").trim();
+  if (!v || !currentSegments.length) {
+    toast("无 OCR 定位可映射", "error");
+    return;
+  }
+  let best = null;
+  let bestScore = 0;
+  for (const s of currentSegments) {
+    const t = (s.text || "").trim();
+    if (!t) continue;
+    let score = 0;
+    if (v.includes(t) && t.length > 1) score = t.length; // 片段是值的子串
+    else if (t.includes(v) && v.length > 1) score = v.length; // 值是片段的子串
+    if (score > bestScore) {
+      bestScore = score;
+      best = s;
+    }
+  }
+  if (!best) {
+    toast("未在 OCR 字段中找到匹配：" + v.slice(0, 20), "error");
+    return;
+  }
+  highlightSegment(best);
+  markMiddleField(best.idx);
+  toast("已映射到 OCR 定位：" + best.text.slice(0, 20), "success");
+}
+
+// 右侧「识别的字段」：取自汇总表当前文件对应行，点击 → 映射到 OCR 定位
+function renderRecognized() {
+  recognizedMap = [];
+  if (!batchTable || batchTable.error || !batchTable.tables || !batchTable.tables[0]) {
+    recognizedEl.innerHTML = '<span class="muted">（汇总表尚未生成或无结构化字段）</span>';
+    return;
+  }
+  const table = batchTable.tables[0];
+  const order = batchTable.file_order || [];
+  const idx = order.indexOf(currentFileId);
+  if (idx < 0 || !table.rows || idx >= table.rows.length) {
+    recognizedEl.innerHTML = '<span class="muted">（该文件在汇总表中无对应行）</span>';
+    return;
+  }
+  const row = table.rows[idx];
+  const entries = [];
+  if (Array.isArray(row)) {
+    (table.headers || []).forEach((h, i) => entries.push([h, row[i]]));
+  } else if (row && typeof row === "object") {
+    (table.headers || []).forEach((h) => entries.push([h, row[h]]));
+  }
+  if (!entries.length) {
+    recognizedEl.innerHTML = '<span class="muted">（无字段）</span>';
+    return;
+  }
+  recognizedMap = entries;
+  recognizedEl.innerHTML = entries
+    .map(
+      ([k, v], i) =>
+        `<div class="rec-field" data-i="${i}" title="点击在左图与 OCR 定位一致高亮">` +
+        `<span class="rec-k">${escapeHtml(k)}</span>` +
+        `<span class="rec-v">${escapeHtml(v == null ? "" : v)}</span>` +
+        `</div>`
+    )
+    .join("");
+  recognizedEl.querySelectorAll(".rec-field").forEach((btn) => {
+    btn.onclick = () => {
+      const i = Number(btn.getAttribute("data-i"));
+      const [k, v] = recognizedMap[i];
+      recognizedEl.querySelectorAll(".rec-field").forEach((x) => x.classList.remove("active"));
+      btn.classList.add("active");
+      mapValueToSegment(v);
+    };
+  });
+}
+
 async function loadFileDetail(fid, force = false) {
   if (!fid) return;
   try {
@@ -248,6 +338,7 @@ async function loadFileDetail(fid, force = false) {
     }
     renderStages(currentPages);
     renderFields(currentSegments);
+    renderRecognized();
     renderRowForFile(fid);
   } catch (e) {
     imageBox.innerHTML = `<span class="muted">预览加载失败：${escapeHtml(e.message)}</span>`;
@@ -282,6 +373,7 @@ async function load() {
       currentFileId = fileItems[0].id;
     }
     if (currentFileId) await loadFileDetail(currentFileId, true);
+    await loadChat();
   } catch (e) {
     titleEl.textContent = "加载失败";
     metaEl.textContent = e.message;
@@ -347,6 +439,145 @@ document.getElementById("rerun-ocr").onclick = async () => {
     toast("重新识别失败：" + e.message, "error");
   }
 };
+
+// ---------------------------------------------------------------------------
+// LLM 会话：基于当前文件 OCR 原文的多轮对话，支持编辑调整与继续上下文
+// ---------------------------------------------------------------------------
+const chatBox = document.getElementById("chat-box");
+const chatEmpty = document.getElementById("chat-empty");
+const chatInput = document.getElementById("chat-input");
+const chatHint = document.getElementById("chat-hint");
+const chatSendBtn = document.getElementById("chat-send");
+
+async function loadChat() {
+  if (!currentFileId) return;
+  chatEditIndex = null;
+  resetChatSendBtn();
+  try {
+    const resp = await API.getChat(currentFileId);
+    chatHistory = resp.history || [];
+    renderChat();
+  } catch (e) {
+    chatHistory = [];
+    renderChat();
+  }
+}
+
+function renderChat() {
+  if (!chatHistory.length) {
+    chatBox.innerHTML = "";
+    chatEmpty.style.display = "";
+    return;
+  }
+  chatEmpty.style.display = "none";
+  chatBox.innerHTML = chatHistory
+    .filter((m) => m.role !== "system")
+    .map((m) => {
+      const cls = m.role === "user" ? "me" : "ai";
+      const label = m.role === "user" ? "我" : "AI";
+      const ops =
+        m.role === "user"
+          ? `<div class="chat-ops"><button class="chat-edit" data-seq="${m.seq}">修改</button></div>`
+          : `<div class="chat-ops"><button class="chat-regen" data-seq="${m.seq}">重新生成</button></div>`;
+      return (
+        `<div class="chat-msg ${cls}" data-seq="${m.seq}">` +
+        `<div class="chat-role">${label}</div>` +
+        `<div class="chat-bubble">${escapeHtml(m.content)}</div>` +
+        ops +
+        `</div>`
+      );
+    })
+    .join("");
+  chatBox.querySelectorAll(".chat-edit").forEach((b) => {
+    b.onclick = () => startEdit(Number(b.getAttribute("data-seq")));
+  });
+  chatBox.querySelectorAll(".chat-regen").forEach((b) => {
+    b.onclick = () => regenerateChat();
+  });
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function resetChatSendBtn() {
+  chatSendBtn.textContent = "发送";
+}
+
+function startEdit(seq) {
+  const msg = chatHistory.find((m) => m.seq === seq && m.role === "user");
+  if (!msg) return;
+  chatEditIndex = seq;
+  chatInput.value = msg.content;
+  chatInput.focus();
+  chatSendBtn.textContent = "保存修改";
+  chatHint.textContent = "正在修改一条历史消息，保存后将截断其后所有对话并重新生成。";
+}
+
+async function sendChat() {
+  if (!currentFileId) return toast("请先选择文件", "error");
+  const text = chatInput.value.trim();
+  if (!text && chatEditIndex == null) return toast("请输入问题", "error");
+
+  const body = {};
+  if (chatEditIndex != null) {
+    body.message = text;
+    body.edit_index = chatEditIndex;
+  } else {
+    body.message = text;
+  }
+  chatSendBtn.disabled = true;
+  chatHint.textContent = "LLM 思考中…";
+  try {
+    const resp = await API.postChat(currentFileId, body);
+    chatHistory = resp.history || [];
+    chatEditIndex = null;
+    chatInput.value = "";
+    resetChatSendBtn();
+    renderChat();
+  } catch (e) {
+    toast("对话失败：" + e.message, "error");
+  } finally {
+    chatSendBtn.disabled = false;
+    chatHint.textContent = "";
+  }
+}
+
+async function regenerateChat() {
+  if (!currentFileId) return;
+  const last = [...chatHistory].reverse().find((m) => m.role === "assistant");
+  if (!last) return toast("没有可重新生成的回复", "error");
+  chatHint.textContent = "重新生成中…";
+  try {
+    const resp = await API.postChat(currentFileId, { regenerate: true });
+    chatHistory = resp.history || [];
+    renderChat();
+  } catch (e) {
+    toast("重新生成失败：" + e.message, "error");
+  } finally {
+    chatHint.textContent = "";
+  }
+}
+
+async function clearChat() {
+  if (!currentFileId) return;
+  try {
+    await API.deleteChat(currentFileId);
+    chatHistory = [];
+    chatEditIndex = null;
+    resetChatSendBtn();
+    renderChat();
+    toast("对话已清空", "success");
+  } catch (e) {
+    toast("清空失败：" + e.message, "error");
+  }
+}
+
+document.getElementById("chat-send").onclick = sendChat;
+document.getElementById("chat-clear").onclick = clearChat;
+chatInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+  }
+});
 
 // 每 5 秒轻量刷新
 setInterval(autoRefresh, 5000);

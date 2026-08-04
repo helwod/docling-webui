@@ -180,6 +180,17 @@ class LLMService:
 
         return {"success": False, "error": "LLM call failed after retry"}
 
+    async def chat(self, messages: list[dict], model_override: str = None, timeout: int = 90) -> str:
+        """多轮对话：messages 为 [{role, content}] 列表（含 system/user/assistant）。
+
+        复用统一流式调用；返回拼接后的助手回复文本。
+        """
+        api_key, base_url, model = await self._get_credentials(model_override)
+        if not api_key or api_key == "your-api-key-here":
+            raise ValueError("LLM API key 未配置")
+        client = self._build_client(api_key, base_url)
+        return await self._stream_chat(client, model, messages=messages, timeout=timeout)
+
     async def list_models(self, base_url_override=None, api_key_override=None) -> list[str]:
         """调用 OpenAI 兼容 /models 端点，返回模型 id 列表（升序）。"""
         api_key, base_url, _ = await self._get_credentials(

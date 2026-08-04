@@ -71,6 +71,18 @@ async def _init_tables():
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS file_chats (
+            id TEXT PRIMARY KEY,
+            file_id TEXT NOT NULL,
+            seq INTEGER NOT NULL,
+            role TEXT NOT NULL CHECK (role IN ('system', 'user', 'assistant')),
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_file_chats_file_id_seq ON file_chats(file_id, seq);
+
         CREATE INDEX IF NOT EXISTS idx_files_batch_id ON files(batch_id);
         CREATE INDEX IF NOT EXISTS idx_files_ocr_status ON files(ocr_status);
         CREATE INDEX IF NOT EXISTS idx_files_llm_status ON files(llm_status);

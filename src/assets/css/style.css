@@ -335,3 +335,70 @@ img.preview { max-width: 100%; border: 1px solid var(--border); border-radius: 8
   display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
 }
 .img-page-bar .page-no { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+
+/* ---- 详情页三栏（左图 / 中OCR / 右识别字段）---- */
+.three-col { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+.three-col > .col { flex: 1 1 300px; min-width: 300px; }
+@media (max-width: 1100px) {
+  .three-col { flex-direction: column; }
+  .three-col > .col { width: 100%; min-width: 0; }
+}
+
+/* ---- 右侧识别字段（汇总表结构化结果，可点击映射到 OCR）---- */
+.recognized-fields {
+  border: 1px solid var(--border); border-radius: 8px;
+  max-height: 460px; overflow: auto; padding: 8px; background: #fff;
+}
+.rec-field {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid transparent; margin-bottom: 6px; background: #fafbfc;
+}
+.rec-field:hover { background: #eff5ff; border-color: #bfdbfe; }
+.rec-field.active { background: #fef3c7; border-color: #fcd34d; }
+.rec-k { font-size: 12px; color: var(--muted); font-weight: 600; }
+.rec-v { font-size: 13.5px; color: var(--text); word-break: break-word; line-height: 1.5; }
+
+/* ---- LLM 会话面板 ---- */
+.chat-box {
+  display: flex; flex-direction: column; gap: 12px;
+  max-height: 460px; overflow: auto; padding: 4px 2px;
+}
+.chat-empty { color: var(--muted); font-size: 13px; padding: 18px 4px; }
+.chat-msg { max-width: 88%; }
+.chat-msg.me { align-self: flex-end; text-align: right; }
+.chat-msg.ai { align-self: flex-start; }
+.chat-role { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+.chat-bubble {
+  display: inline-block; text-align: left; padding: 10px 13px; border-radius: 12px;
+  font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+}
+.chat-msg.me .chat-bubble { background: var(--primary); color: #fff; border-bottom-right-radius: 3px; }
+.chat-msg.ai .chat-bubble { background: #f1f5f9; color: var(--text); border-bottom-left-radius: 3px; }
+.chat-ops { margin-top: 4px; }
+.chat-ops button {
+  font-size: 11px; color: var(--muted); background: none; border: none; cursor: pointer;
+  padding: 2px 6px; border-radius: 5px;
+}
+.chat-ops button:hover { background: #eef2f7; color: var(--text); }
+.chat-input-row { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.chat-input { resize: vertical; min-height: 44px; }
+.chat-actions { margin-top: 0; }
+
+/* ---- 响应式 ---- */
+@media (max-width: 900px) {
+  .container { padding: 16px 12px 48px; }
+  .nav-inner { height: auto; flex-wrap: wrap; padding: 8px 12px; gap: 10px; }
+  .nav-links { order: 3; width: 100%; overflow-x: auto; }
+  .detail-head { flex-direction: column; }
+  .btn-row { gap: 8px; }
+  .summary-scroll, .ocr-fields, .recognized-fields, .chat-box { max-height: 340px; }
+}
+@media (max-width: 600px) {
+  .two-col { flex-direction: column; }
+  .two-col > .col { min-width: 0; }
+  .card { padding: 14px; }
+  .page-title { font-size: 18px; }
+  .filelist-item { max-width: 100%; }
+  .filelist-item .fi-name { max-width: 60vw; }
+}

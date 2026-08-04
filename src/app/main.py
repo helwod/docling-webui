@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.db.database import get_db, close_db
 from app.config import settings
-from app.routers import batches, files, config as config_router
+from app.routers import batches, files, config as config_router, chat as chat_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,6 +79,7 @@ ROOT_PATH = ("/" + _raw) if _raw else ""
 app.include_router(batches.router, prefix=ROOT_PATH)
 app.include_router(files.router, prefix=ROOT_PATH)
 app.include_router(config_router.router, prefix=ROOT_PATH)
+app.include_router(chat_router.router, prefix=ROOT_PATH)
 
 
 @app.get(ROOT_PATH + "/api/v1/health")
