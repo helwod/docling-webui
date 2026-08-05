@@ -264,6 +264,33 @@ BATCH_USER_TEMPLATE = """下面是 {n} 份文档，每份以 "===== DOCUMENT {{i
 若某份文档没有可提取的字段，仍要为它生成一行（含文件名），其余单元格留空。"""
 
 
+REGEN_SYSTEM_PROMPT = """你是一个表格数据修正助手。
+你会得到【当前的汇总表 JSON】和【各文件的原始 OCR 文本】。用户会给出一条修正指令
+（例如：补全缺失字段、统一字段写法、修正某一列的不一致数据、按业务规则核对等）。
+
+你的任务：依据指令，对照原始 OCR 文本重新生成【汇总表 JSON】，尽量补全缺失、修正差异。
+
+规则：
+1. 只输出【一张】表，每行对应一个文件，且文件顺序与输入 file_order 保持一致。
+2. 对照原始 OCR 补全缺失字段、修正明显错误 / 不一致：
+   - 同一字段在不同文件写法不一（如 "甲方" 有的写全称有的写简称），按指令或最完整的原文统一；
+   - 日期 / 金额 / 编号格式异常或被截断，依据 OCR 原文修正，不要臆造；
+   - 缺失的单元格，若 OCR 中确有该信息则补全，否则留空 ""。
+3. 单元格的值必须严格照抄 OCR 原文写法（含中文大写数字、原始编号 / 日期格式），
+   不要把字段名写进值，不要编造数据。
+4. 所有行使用一致的中文业务字段名（如 合同编号、签订日期、甲方、金额），不要使用 "col1/col2"。
+5. 只返回合法 JSON，不要附带任何解释说明，格式如下：
+{
+  "tables": [
+    {
+      "title": "批次汇总",
+      "headers": ["字段1", "字段2", ...],
+      "rows": [ {"字段1": "原文值1", "字段2": "原文值2"}, ... ]
+    }
+  ]
+}"""
+
+
 class LLMService:
     def __init__(self, setting_repo: SettingRepo):
         self.setting_repo = setting_repo
@@ -546,6 +573,119 @@ class LLMService:
                 "prompt": prompt_text,
                 "raw_reply": raw_reply,
                 "file_order": file_order,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"LLM 返回无法解析为 JSON：{str(e)}",
+                "prompt": prompt_text,
+                "raw_reply": content,
+                "file_order": file_order,
+            }
+
+    async def regenerate_batch_table(
+        self,
+        existing_table: dict,
+        files: list[dict],
+        instruction: str,
+        model_override: str = None,
+    ) -> dict:
+        """根据用户的修正指令 + 原始 OCR，重新生成批次汇总表。
+
+        与 format_batch_table 的区别：已有汇总表也作为输入上下文之一，让 LLM 对照
+        原始 OCR 补全缺失字段、修正数据差异 / 不一致，而不是从零提取。
+        返回 {"success", "result": {"tables":[...], "file_order":[...]}, "model", "prompt", "raw_reply"}。
+        """
+        if not isinstance(existing_table, dict):
+            return {
+                "success": False,
+                "error": "现有汇总表为空，无法据此重新生成",
+                "file_order": [],
+            }
+        tables = existing_table.get("tables") or []
+        if not tables:
+            return {
+                "success": False,
+                "error": "现有汇总表无数据行，无法据此重新生成",
+                "file_order": [],
+            }
+        file_order = existing_table.get("file_order") or []
+
+        # 原始 OCR 文档（清理后），与 format_batch_table 同格式
+        docs = []
+        for i, f in enumerate(files, 1):
+            content = (f.get("ocr_md_content") or "").strip()
+            if not content or f.get("ocr_status") != "completed":
+                content = f"[OCR 未完成或失败：{f.get('original_filename')}]"
+            else:
+                content = _clean_ocr_md(content)
+            docs.append(
+                f"===== DOCUMENT {i} (文件名: {f.get('original_filename')}) =====\n{content}"
+            )
+
+        existing_json = json.dumps(existing_table, ensure_ascii=False)
+        user_prompt = (
+            "下面是【当前的汇总表 JSON】（每行 = 一个文件，file_order 为该批次文件顺序）：\n\n"
+            f"{existing_json}\n\n"
+            "下面是【各文件的原始 OCR 文本】，用于核对 / 补全：\n\n"
+            f"{chr(10).join(docs)}\n\n"
+            f"用户指令：{instruction}\n\n"
+            "请依据上述指令，对照原始 OCR 重新生成【汇总表 JSON】。要求：\n"
+            "① 仍只输出【一张】表，每行对应一个文件，文件顺序与上面 file_order 一致；\n"
+            "② 对照 OCR 补全缺失字段、修正明显错误 / 不一致（例如同一字段在不同文件写法不一、日期或金额格式异常）；\n"
+            "③ 单元格值严格照抄 OCR 原文写法（含中文大写数字、原编号 / 日期格式），不要把字段名写进值，不要编造；\n"
+            "④ 字段名使用中文业务名称，所有行列名一致；\n"
+            "⑤ 只返回合法 JSON，不要附带解释说明。"
+        )
+        prompt_text = f"[SYSTEM]\n{REGEN_SYSTEM_PROMPT}\n\n[USER]\n{user_prompt}"
+
+        api_key, base_url, model = await self._get_credentials(model_override)
+        if not api_key or api_key == "your-api-key-here":
+            return {
+                "success": False,
+                "error": "LLM API key not configured",
+                "prompt": prompt_text,
+                "raw_reply": None,
+                "file_order": file_order,
+            }
+
+        client = self._build_client(api_key, base_url)
+        messages = [
+            {"role": "system", "content": REGEN_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+        content, llm_err = await self._chat_json(client, model, messages=messages, timeout=120)
+        raw_reply = content
+        if llm_err:
+            return {
+                "success": False,
+                "error": f"LLM call failed: {llm_err}",
+                "prompt": prompt_text,
+                "raw_reply": None,
+                "file_order": file_order,
+            }
+        if not content:
+            return {
+                "success": False,
+                "error": "Empty LLM response",
+                "prompt": prompt_text,
+                "raw_reply": raw_reply,
+                "file_order": file_order,
+            }
+        try:
+            result = self._extract_json(content)
+            result = _strip_labels_from_result(result)  # 兜底：去掉值里重复的字段名/标签
+            # 保住 file_order 映射（行 -> 文件），避免重新生成后行与文件错乱
+            if not result.get("file_order") and file_order:
+                result["file_order"] = file_order
+            return {
+                "success": True,
+                "skipped": False,
+                "result": result,
+                "model": model,
+                "prompt": prompt_text,
+                "raw_reply": raw_reply,
+                "file_order": result.get("file_order", file_order),
             }
         except Exception as e:
             return {

@@ -35,7 +35,8 @@ _MAX_TABLE_CHARS = 24000
 class ChatSend(BaseModel):
     message: Optional[str] = ""        # 用户消息；regenerate/edit_index 模式下可为空
     edit_index: Optional[int] = None   # 指定要编辑的用户消息 seq（编辑后重新生成后续）
-    regenerate: Optional[bool] = False  # 仅重新生成最后一条助手回复
+    regenerate: Optional[bool] = False  # 仅重新生成最后一条助手回复（纯问答）
+    regenerate_table: Optional[bool] = False  # 依据用户指令重新生成汇总表并写回批次
 
 
 def _get_repos(db=Depends(get_db)):
@@ -184,6 +185,52 @@ async def send_chat(batch_id: str, body: ChatSend, repos=Depends(_get_repos)):
         user_row = await chat_repo.add_message(batch_id, "user", user_msg)
         history.append(user_row)
 
+    # ===== 模式 A：依据用户指令重新生成汇总表并写回批次 =====
+    if body.regenerate_table:
+        existing = _parse_json(batch.get("batch_table"))
+        if not isinstance(existing, dict) or not (existing.get("tables")):
+            assistant_text = "该批次尚未生成汇总表，无法根据指令重新生成。请先生成汇总表。"
+            assistant_row = await chat_repo.add_message(batch_id, "assistant", assistant_text)
+            history.append(assistant_row)
+            return {
+                "code": 0,
+                "data": {"batch_id": batch_id, "history": history, "table_updated": False},
+            }
+
+        files = await repos["file_repo"].get_all_for_consolidated(batch_id)
+        llm_service = LLMService(repos["setting_repo"])
+        regen = await llm_service.regenerate_batch_table(existing, files, user_msg)
+        if regen.get("success"):
+            await repos["batch_repo"].update_batch_table(
+                batch_id,
+                json.dumps(regen["result"], ensure_ascii=False),
+                prompt=regen.get("prompt"),
+                reply=regen.get("raw_reply"),
+            )
+            new_table = regen["result"]
+            first = (new_table.get("tables") or [{}])[0]
+            n_rows = len(first.get("rows") or [])
+            n_cols = len(first.get("headers") or [])
+            assistant_text = (
+                f"已根据指令重新生成汇总表：共 {n_rows} 行、{n_cols} 列，"
+                "已更新到本批次汇总表，可在左侧表格查看。"
+            )
+        else:
+            assistant_text = f"重新生成汇总表失败：{regen.get('error')}"
+
+        assistant_row = await chat_repo.add_message(batch_id, "assistant", assistant_text)
+        history.append(assistant_row)
+        return {
+            "code": 0,
+            "data": {
+                "batch_id": batch_id,
+                "history": history,
+                "table_updated": bool(regen.get("success")),
+                "table": regen.get("result") if regen.get("success") else None,
+            },
+        }
+
+    # ===== 模式 B：普通多轮问答（基于汇总表上下文）=====
     # 组装发给 LLM 的 messages：system（含批次汇总表上下文）+ 完整历史
     table_ctx = _build_table_context(batch, repos["file_repo"])
     system_content = CHAT_SYSTEM_PROMPT + "\n\n" + table_ctx

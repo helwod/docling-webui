@@ -92,13 +92,18 @@
         会话上下文按「每个文件一段」组织：每段以 <code>▦ 文件内容开始（行号 N / 文件名：xxx）</code> 开头、
         以 <code>▦ 文件内容结束（行号 N）</code> 结尾，块内为「字段名: 字段值」。模型会先判定问题涉及哪个文件，再只引用该段内容作答。
       </p>
+      <p class="muted" style="margin:0 0 10px;font-size:12px;line-height:1.6;background:#f6f8ff;border-left:3px solid #4a6cf7;padding:6px 10px;border-radius:4px">
+        <b>按指令重新生成数据：</b>在输入框里写下修正要求（如「补全第 3 行缺失的金额字段」「统一各文件甲方写法 / 修正不一致数据」），再点
+        <b>按指令重新生成</b>。模型会对照原始 OCR 补全缺失字段、修正差异，并把新汇总表写回本批次（左侧表格同步刷新）。
+      </p>
       <div class="chat-box" id="chat-box">
         <div class="chat-empty" id="chat-empty">尚未开始对话。在下方输入问题，例如「汇总表里金额合计是多少？」「第 3 个文件的甲方是谁？」。</div>
       </div>
       <div class="chat-input-row">
-        <textarea id="chat-input" class="chat-input" rows="2" placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
+        <textarea id="chat-input" class="chat-input" rows="2" placeholder="输入你的问题或重新生成指令…（Enter 发送，Shift+Enter 换行）"></textarea>
         <div class="btn-row chat-actions">
           <button class="btn btn-primary btn-sm" id="chat-send">发送</button>
+          <button class="btn btn-sm" id="chat-regen-table">按指令重新生成</button>
           <button class="btn btn-sm" id="chat-clear">清空</button>
           <span class="hint" id="chat-hint"></span>
         </div>

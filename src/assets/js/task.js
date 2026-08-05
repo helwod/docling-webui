@@ -748,6 +748,37 @@ async function clearChat() {
 
 document.getElementById("chat-send").onclick = sendChat;
 document.getElementById("chat-clear").onclick = clearChat;
+document.getElementById("chat-regen-table").onclick = regenTableFromChat;
+
+async function regenTableFromChat() {
+  if (!batchId) return toast("请先打开批次", "error");
+  // 用户指令：优先用输入框内容；为空则用默认「补全缺失 + 修正不一致」
+  const text =
+    chatInput.value.trim() ||
+    "请检查并补全所有缺失字段、修正各字段之间不一致的数据，重新生成汇总表。";
+  chatSendBtn.disabled = true;
+  chatHint.textContent = "正在根据指令重新生成汇总表…";
+  try {
+    const resp = await API.postChat(batchId, {
+      message: text,
+      regenerate_table: true,
+    });
+    chatHistory = resp.history || [];
+    chatInput.value = "";
+    chatEditIndex = null;
+    resetChatSendBtn();
+    renderChat();
+    if (resp.table_updated) {
+      toast("汇总表已根据指令重新生成", "success");
+      await load(); // 刷新左侧汇总表
+    }
+  } catch (e) {
+    toast("重新生成失败：" + e.message, "error");
+  } finally {
+    chatSendBtn.disabled = false;
+    chatHint.textContent = "";
+  }
+}
 chatInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
