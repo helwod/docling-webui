@@ -3,6 +3,14 @@ import re
 from openai import AsyncOpenAI
 from app.repositories.setting_repo import SettingRepo
 
+
+def _clean_json_text(s: str) -> str:
+    """修复 LLM 常见 JSON 瑕疵：尾随逗号、// 行注释、/* */ 块注释。"""
+    s = re.sub(r",(\s*[}\]])", r"\1", s)          # 对象/数组尾部的尾随逗号
+    s = re.sub(r"//[^\n]*", "", s)                # 行注释
+    s = re.sub(r"/\*.*?\*/", "", s, flags=re.DOTALL)  # 块注释
+    return s.strip()
+
 SYSTEM_PROMPT = """You are a table data extraction assistant.
 Your task is to analyze OCR-processed markdown content and extract
 structured table data into JSON format.
@@ -151,31 +159,52 @@ class LLMService:
 
     @staticmethod
     def _extract_json(text):
-        """从 LLM 返回文本中提取 JSON，容忍 markdown 代码围栏与前后杂项文本。"""
+        """从 LLM 返回文本中提取 JSON，容错策略（依次尝试）：
+
+        1. 直接 json.loads（模型已返回纯净 JSON）；
+        2. 剥离 markdown 代码围栏 ```json ... ``` / ``` ... ```（围栏可在文本任意位置）
+           —— 用非贪婪匹配只取围栏内内容，避免尾注里的花括号污染；
+        3. 在围栏内容 / 全文里截取第一个 `{`→最后一个 `}`（或 `[`→`]`）；
+        4. 对截取片段做常见瑕疵修复（尾随逗号、`//` 行注释、`/* */` 块注释）后再次解析。
+        """
         text = (text or "").strip()
-        if text.startswith("```"):
-            # 去掉开头的 ```json / ``` 围栏
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-            text = text.strip()
-        # 先尝试直接解析
-        try:
-            return json.loads(text)
-        except Exception:
-            pass
-        # 退而求其次：截取第一个 { 到最后一个 } 的片段
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            frag = text[start : end + 1]
-            # 修复常见 LLM 输出瑕疵：尾随逗号、对象/数组尾部的多余逗号、注释
-            frag = re.sub(r",(\s*[}\]])", r"\1", frag)
-            frag = re.sub(r"//[^\n]*", "", frag)
+
+        def _try_parse(s):
+            s = s.strip()
+            if not s:
+                return None
             try:
-                return json.loads(frag)
+                return json.loads(s)
             except Exception:
                 pass
+            try:
+                return json.loads(_clean_json_text(s))
+            except Exception:
+                return None
+
+        # 1) 直接解析
+        r = _try_parse(text)
+        if r is not None:
+            return r
+
+        # 2) 剥离 markdown 围栏（语言名可有可无；内容任意字符，非贪婪）
+        m = re.search(r"```[ \t]*[a-zA-Z]*[ \t]*\n?(.*?)\n?[ \t]*```", text, re.DOTALL)
+        if m:
+            fenced = m.group(1).strip()
+            r = _try_parse(fenced)
+            if r is not None:
+                return r
+
+        # 3) 兜底：截取第一个 { 到最后一个 }（优先对象）；否则 [ 到 ]
+        for open_c, close_c in (("{", "}"), ("[", "]")):
+            start = text.find(open_c)
+            end = text.rfind(close_c)
+            if start != -1 and end != -1 and end > start:
+                frag = text[start : end + 1]
+                r = _try_parse(frag)
+                if r is not None:
+                    return r
+
         raise ValueError("LLM 返回内容中未找到合法 JSON")
 
     async def extract_tables(self, ocr_md_content: str, model_override: str = None) -> dict:
