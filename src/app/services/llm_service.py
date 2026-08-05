@@ -11,23 +11,22 @@ def _clean_json_text(s: str) -> str:
     s = re.sub(r"/\*.*?\*/", "", s, flags=re.DOTALL)  # 块注释
     return s.strip()
 
-SYSTEM_PROMPT = """You are a table data extraction assistant.
-Your task is to analyze OCR-processed markdown content and extract
-structured table data into JSON format.
+SYSTEM_PROMPT = """你是一个表格数据提取助手。
+你的任务是分析经过 OCR 处理的 Markdown 内容，并将其中的结构化表格数据提取为 JSON 格式。
 
-Rules:
-1. Only extract table data, ignore non-table content.
-2. Use meaningful Chinese business field names as headers (e.g. 合同编号, 签订日期, 甲方, 金额), NOT generic "col1/col2".
-3. Each row becomes a JSON object in an array.
-4. CRITICAL — copy cell values EXACTLY as written in the source OCR text. Do NOT reformat, normalize, or "correct" them:
-   - Keep dates, numbers, amounts, and codes exactly as written
-     (e.g. write "2024.1.5" NOT "2024-01-05"; "HT-2024-001" NOT "HT2024001"; "12,500.00" NOT "12500").
-   - Keep Chinese numerals as written (e.g. "壹万圆整" stays "壹万圆整").
-   - Only compute/derive a value when the source explicitly states a calculation or total; otherwise keep the literal source text.
-5. If no table is found, return empty array.
-6. Return ONLY valid JSON, no explanations.
+规则：
+1. 只提取表格数据，忽略非表格内容。
+2. 使用有意义的中文业务字段名作为表头（例如：合同编号、签订日期、甲方、金额），不要使用 "col1/col2" 这类通用名称。
+3. 每一行对应一个 JSON 对象，放入数组中。
+4. 关键要求——单元格的值必须严格按照源 OCR 文本中的写法照搬，不要重新格式化、归一化或"修正"：
+   - 日期、数字、金额、编号等保持原文写法
+     （例如写 "2024.1.5" 不要写 "2024-01-05"；写 "HT-2024-001" 不要写 "HT2024001"；写 "12,500.00" 不要写 "12500"）。
+   - 中文大写数字保持原文（例如 "壹万圆整" 保持 "壹万圆整"）。
+   - 仅当来源明确给出计算或合计时才计算/推导数值，否则保留原文照抄。
+5. 若未找到任何表格，返回空数组。
+6. 只返回合法的 JSON，不要附带任何解释说明。
 
-Output format:
+输出格式：
 {
   "tables": [
     {
@@ -41,33 +40,28 @@ Output format:
   ]
 }"""
 
-USER_PROMPT_TEMPLATE = """Here is the OCR markdown content:
+USER_PROMPT_TEMPLATE = """以下是 OCR 处理后的 Markdown 内容：
 
 {ocr_md_content}
 
-Extract all tables from the above content into structured JSON format."""
+请将上述内容中的所有表格提取为结构化 JSON 格式。"""
 
-BATCH_SYSTEM_PROMPT = """You are a table data extraction assistant.
-You will be given multiple documents (their OCR text). Your task is to
-organize ALL documents into ONE structured table.
+BATCH_SYSTEM_PROMPT = """你是一个表格数据提取助手。
+下面会给你多份文档（它们的 OCR 文本）。你的任务是把【所有文档】整理成【一张】结构化表格。
 
-Rules:
-1. Produce exactly ONE table.
-2. Each row corresponds to ONE input document, in the SAME order as given
-   (DOCUMENT 1 -> row 1, DOCUMENT 2 -> row 2, ...).
-3. Use CONSISTENT column headers across all rows. Choose headers that best
-   capture the shared business fields across documents, and use meaningful
-   Chinese business field names (e.g. 合同编号, 签订日期, 甲方, 金额).
-   Do NOT use generic "col1/col2".
-4. CRITICAL — copy each cell value EXACTLY as written in that document's
-   source OCR text. Do NOT reformat, normalize, or "correct" values:
-   - Keep dates, numbers, amounts, and codes exactly as written
-     (e.g. write "2024.1.5" NOT "2024-01-05"; "HT-2024-001" NOT "HT2024001").
-   - Keep Chinese numerals as written (e.g. "壹万圆整" stays "壹万圆整").
-   - Only compute/derive a value when the source explicitly states a
-     calculation or total; otherwise keep the literal source text.
-5. Do not invent data. If a document lacks a field, leave that cell empty ("").
-6. Return ONLY valid JSON, no explanations, in this format:
+规则：
+1. 只输出【一张】表格。
+2. 每一行对应【一份】输入文档，且顺序与给出的顺序一致
+   （DOCUMENT 1 → 第 1 行，DOCUMENT 2 → 第 2 行，……）。
+3. 所有行使用【一致】的列名；选择能最好地概括各文档共有业务字段的列名，并使用有意义的中文业务字段名
+   （例如：合同编号、签订日期、甲方、金额）。不要使用 "col1/col2" 这类通用名称。
+4. 关键要求——每个单元格的值必须严格按照该文档源 OCR 文本中的写法照搬，不要重新格式化、归一化或"修正"：
+   - 日期、数字、金额、编号等保持原文写法
+     （例如写 "2024.1.5" 不要写 "2024-01-05"；写 "HT-2024-001" 不要写 "HT2024001"）。
+   - 中文大写数字保持原文（例如 "壹万圆整" 保持 "壹万圆整"）。
+   - 仅当来源明确给出计算或合计时才计算/推导数值，否则保留原文照抄。
+5. 不得编造数据。若某份文档缺少某个字段，该单元格留空（""）。
+6. 只返回合法的 JSON，不要附带任何解释说明，格式如下：
 {
   "tables": [
     {
@@ -78,13 +72,12 @@ Rules:
   ]
 }"""
 
-BATCH_USER_TEMPLATE = """Below are {n} documents, each delimited by "===== DOCUMENT {{i}} =====".
+BATCH_USER_TEMPLATE = """下面是 {n} 份文档，每份以 "===== DOCUMENT {{i}} =====" 分隔。
 
 {documents}
 
-Organize all {n} documents into ONE table, one row per document, preserving order.
-If a document has no extractable fields, still produce its row with the file name
-and empty cells."""
+请将这 {n} 份文档整理成一张表格，每份文档一行，保持原有顺序。
+若某份文档没有可提取的字段，仍要为它生成一行（含文件名），其余单元格留空。"""
 
 
 class LLMService:
