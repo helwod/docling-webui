@@ -326,6 +326,37 @@ function findBestSegment(value, segments) {
   return bestScore > 0 ? best : null;
 }
 
+// 用「字段名」在 OCR 片段里找标签行作为定位锚点（当字段值因 LLM 规范化改写而值匹配失败时兜底）。
+// 例如字段名"签订日期"可命中 OCR 行"签订日期：2024.1.5"，从而定位到该字段所在行。
+// 约束：字段名须在段的前半部分出现（标签通常在行首），且段不过长，避免误匹配正文长段。
+function findBestSegmentByKey(key, segments) {
+  const k = (key || "").trim();
+  if (!k || !segments || !segments.length) return null;
+  const nk = normText(k);
+  if (nk.length < 2) return null; // 单字字段名（性别/金额等）不可靠，跳过
+  let best = null;
+  let bestScore = 0;
+  for (const s of segments) {
+    const t = (s.text || "").trim();
+    if (!t) continue;
+    const nt = normText(t);
+    if (!nt) continue;
+    const pos = nt.indexOf(nk);
+    if (pos === -1) continue;
+    if (pos > Math.floor(nt.length / 2)) continue;   // 字段名须在行首附近（标签位置）
+    // 必须是「标签行」：字段名后紧跟标签分隔符（：: 空格 括号）或行尾，排除 "合同编号条款…" 这类正文
+    const after = t.slice(t.indexOf(k) + k.length).trimStart();
+    if (after && !/^[:：\s（）()【】\[\]]/.test(after)) continue;
+    if (nt.length > nk.length + 60) continue;          // 标签行不会太长，过长视为正文
+    const score = 1e5 - nt.length;                     // 段越短越像标签行，越精确
+    if (score > bestScore) {
+      bestScore = score;
+      best = s;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
 // 在左图叠加「识别字段」定位标记（蓝色编号），与中间 OCR 定位位置完全一致，点击可反查字段
 function renderMarkers() {
   document.querySelectorAll(".img-markers").forEach((m) => (m.innerHTML = ""));
@@ -376,23 +407,40 @@ function renderRecognized() {
     renderMarkers();
     return;
   }
-  // 预计算每个字段匹配的 OCR 片段（定位信息由此而来，保证与中间 OCR 定位一致）
-  recognizedMap = entries.map(([k, v]) => ({
-    k,
-    v: v == null ? "" : v,
-    seg: findBestSegment(v, currentSegments),
-  }));
+  // 预计算每个字段匹配的 OCR 片段（定位信息由此而来，保证与中间 OCR 定位一致）。
+  // 策略：优先用「字段值」匹配 OCR；若值因 LLM 规范化改写而匹配不上，
+  // 则回退用「字段名」在 OCR 找标签行作为定位锚点（src 记录来源，便于 UI 区分）。
+  recognizedMap = entries.map(([k, v]) => {
+    const val = v == null ? "" : v;
+    let seg = findBestSegment(val, currentSegments);
+    let src = seg ? "value" : null;
+    if (!seg) {
+      const kseg = findBestSegmentByKey(k, currentSegments);
+      if (kseg) {
+        seg = kseg;
+        src = "key";
+      }
+    }
+    return { k, v: val, seg, src };
+  });
   recognizedEl.innerHTML = recognizedMap
     .map((item, i) => {
       const hasPos = !!item.seg;
-      const posTxt = hasPos
-        ? `第 ${item.seg.page_no} 页 · 定位框 (${item.seg.bbox.l}, ${item.seg.bbox.t})–(${item.seg.bbox.r}, ${item.seg.bbox.b})`
-        : "（无对应 OCR 定位）";
+      let posTxt;
+      if (!hasPos) {
+        posTxt = "（无对应 OCR 定位）";
+      } else if (item.src === "key") {
+        posTxt = `第 ${item.seg.page_no} 页 · 按字段名「${item.k}」定位`;
+      } else {
+        posTxt = `第 ${item.seg.page_no} 页 · 定位框 (${item.seg.bbox.l}, ${item.seg.bbox.t})–(${item.seg.bbox.r}, ${item.seg.bbox.b})`;
+      }
+      const posCls = item.src === "key" ? "rec-pos key-pos" : "rec-pos";
+      const boxCls = `rec-field${hasPos ? "" : " no-pos"}${item.src === "key" ? " key-loc" : ""}`;
       return (
-        `<div class="rec-field${hasPos ? "" : " no-pos"}" data-i="${i}" title="点击在左图与中间 OCR 定位一致高亮">` +
+        `<div class="${boxCls}" data-i="${i}" title="点击在左图与中间 OCR 定位一致高亮">` +
         `<span class="rec-k">${escapeHtml(item.k)}</span>` +
         `<span class="rec-v">${escapeHtml(item.v)}</span>` +
-        `<span class="rec-pos">📍 ${escapeHtml(posTxt)}</span>` +
+        `<span class="${posCls}">📍 ${escapeHtml(posTxt)}</span>` +
         `</div>`
       );
     })

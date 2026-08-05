@@ -7,20 +7,25 @@ Your task is to analyze OCR-processed markdown content and extract
 structured table data into JSON format.
 
 Rules:
-1. Only extract table data, ignore non-table content
-2. Preserve original column headers
-3. Each row becomes a JSON object in an array
-4. If no table is found, return empty array
-5. Return ONLY valid JSON, no explanations
+1. Only extract table data, ignore non-table content.
+2. Use meaningful Chinese business field names as headers (e.g. 合同编号, 签订日期, 甲方, 金额), NOT generic "col1/col2".
+3. Each row becomes a JSON object in an array.
+4. CRITICAL — copy cell values EXACTLY as written in the source OCR text. Do NOT reformat, normalize, or "correct" them:
+   - Keep dates, numbers, amounts, and codes exactly as written
+     (e.g. write "2024.1.5" NOT "2024-01-05"; "HT-2024-001" NOT "HT2024001"; "12,500.00" NOT "12500").
+   - Keep Chinese numerals as written (e.g. "壹万圆整" stays "壹万圆整").
+   - Only compute/derive a value when the source explicitly states a calculation or total; otherwise keep the literal source text.
+5. If no table is found, return empty array.
+6. Return ONLY valid JSON, no explanations.
 
 Output format:
 {
   "tables": [
     {
       "table_index": 0,
-      "headers": ["column1", "column2", ...],
+      "headers": ["字段1", "字段2", ...],
       "rows": [
-        {"column1": "value1", "column2": "value2", ...},
+        {"字段1": "原文值1", "字段2": "原文值2", ...},
         ...
       ]
     }
@@ -42,16 +47,24 @@ Rules:
 2. Each row corresponds to ONE input document, in the SAME order as given
    (DOCUMENT 1 -> row 1, DOCUMENT 2 -> row 2, ...).
 3. Use CONSISTENT column headers across all rows. Choose headers that best
-   capture the shared fields across documents. If a document lacks a field,
-   leave that cell empty.
-4. Preserve original values faithfully; do not invent data.
-5. Return ONLY valid JSON, no explanations, in this format:
+   capture the shared business fields across documents, and use meaningful
+   Chinese business field names (e.g. 合同编号, 签订日期, 甲方, 金额).
+   Do NOT use generic "col1/col2".
+4. CRITICAL — copy each cell value EXACTLY as written in that document's
+   source OCR text. Do NOT reformat, normalize, or "correct" values:
+   - Keep dates, numbers, amounts, and codes exactly as written
+     (e.g. write "2024.1.5" NOT "2024-01-05"; "HT-2024-001" NOT "HT2024001").
+   - Keep Chinese numerals as written (e.g. "壹万圆整" stays "壹万圆整").
+   - Only compute/derive a value when the source explicitly states a
+     calculation or total; otherwise keep the literal source text.
+5. Do not invent data. If a document lacks a field, leave that cell empty ("").
+6. Return ONLY valid JSON, no explanations, in this format:
 {
   "tables": [
     {
       "title": "批次汇总",
-      "headers": ["col1", "col2", ...],
-      "rows": [ {"col1": "v1", "col2": "v2"}, ... ]
+      "headers": ["字段1", "字段2", ...],
+      "rows": [ {"字段1": "原文值1", "字段2": "原文值2"}, ... ]
     }
   ]
 }"""

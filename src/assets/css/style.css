@@ -374,6 +374,9 @@ img.preview { max-width: 100%; border: 1px solid var(--border); border-radius: 8
 .rec-pos { font-size: 11px; color: #6b7280; margin-top: 2px; line-height: 1.4; word-break: break-all; }
 .rec-field.no-pos .rec-pos { color: #b91c1c; }
 .rec-field.no-pos { background: #fff7f7; }
+/* 按「字段名」兜底定位：琥珀色区分（值定位为默认灰） */
+.rec-pos.key-pos { color: #b8860b; }
+.rec-field.key-loc { background: #fffdf3; border-left: 3px solid #e0a106; }
 
 /* 左图：识别字段定位标记（蓝色编号，位置与中间 OCR 定位一致） */
 .img-markers { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
