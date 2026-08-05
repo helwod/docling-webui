@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,11 +14,19 @@ from app.services.llm_service import LLMService
 router = APIRouter(prefix="/api/v1/batches", tags=["chat"])
 
 CHAT_SYSTEM_PROMPT = """你是一个「文档批次」智能分析助手。
-下面提供了当前【批次汇总表】的数据（JSON 格式），其中每一行对应一个文件，列是各文件的提取字段。
-请基于这张汇总表回答用户问题；若表中没有相关信息，请明确说明「汇总表中未找到相关内容」，不要编造。
-回答尽量简洁、使用中文，必要时可用要点或表格呈现。
 
-关于坐标与定位：汇总表只含结构化字段值，不含图像坐标；如需定位某字段在原始文件中的位置，请提示用户到页面右侧「识别的字段」中点击对应字段查看。"""
+下面提供了当前【批次汇总表】的数据。本批次以「每行 = 一个文件」组织，每个文件的内容都用固定的开始 / 结束标记包裹，格式定义如下：
+
+  ▦ 文件内容开始（行号 N / 文件名：<文件名>）
+  <该文件的各字段，每行一条，格式为「字段名: 字段值」>
+  ▦ 文件内容结束（行号 N）
+
+阅读与作答规则：
+1. 行号与文件名一一对应，每个「文件内容」块都标明了它属于哪个文件（见块首的「文件名」）。
+2. 回答前先判断问题涉及哪个（或哪些）文件，只引用对应「文件内容」块内的字段作答；不要跨文件块拼凑，也不要编造不存在的字段或文件。
+3. 若汇总表中没有相关信息，请明确说明「汇总表中未找到相关内容」，不要编造。
+4. 回答尽量简洁、使用中文，必要时可用要点或表格呈现。
+5. 关于坐标与定位：汇总表只含结构化字段值，不含图像坐标；如需定位某字段在原始文件中的位置，请提示用户到页面右侧「识别的字段」中点击对应字段查看。"""
 
 # 汇总表 JSON 塞进 system 的安全上限，避免超长上下文
 _MAX_TABLE_CHARS = 24000
@@ -39,40 +48,86 @@ def _get_repos(db=Depends(get_db)):
 
 
 def _build_table_context(batch: dict, file_repo: FileRepo) -> str:
-    """构造发给 LLM 的汇总表上下文（含文件名映射）。"""
-    raw = batch.get("batch_table")
-    table_json = None
-    if isinstance(raw, (dict, list)):
-        table_json = raw
-    elif isinstance(raw, str) and raw.strip():
-        import json as _json
-        try:
-            table_json = _json.loads(raw)
-        except Exception:
-            table_json = None
+    """构造发给 LLM 的批次汇总表上下文。
 
-    parts = []
-    if table_json:
-        text = _json.dumps(table_json, ensure_ascii=False)
-        if len(text) > _MAX_TABLE_CHARS:
-            text = text[:_MAX_TABLE_CHARS] + "\n…（汇总表已截断）"
-        parts.append("===== 批次汇总表（JSON，每行 = 一个文件）=====\n" + text)
-    else:
-        parts.append("（该批次尚未生成汇总表）")
+    每个文件（汇总表每行）的内容都用固定的「开始 / 结束」标记包裹，并在开头给出格式说明，
+    让 LLM 能清晰区分每份文件内容的边界。
+    """
+    raw = batch.get("batch_table")
+    data = _parse_json(raw)
+    if not isinstance(data, dict):
+        return "（该批次尚未生成汇总表）"
+
+    tables = data.get("tables") or []
+    if not tables:
+        return "（该批次尚未生成汇总表）"
+
+    table = tables[0]
+    headers = table.get("headers") or []
+    rows = table.get("rows") or []
+    file_order = data.get("file_order") or []
 
     # 文件名映射：file_order 中的文件 id -> 原始文件名
-    file_order = (table_json or {}).get("file_order") if isinstance(table_json, dict) else None
+    fmap = {}
     if file_order:
         try:
             files = file_repo.list_by_ids(file_order)
             fmap = {f["id"]: f.get("original_filename", "") for f in files}
-            lines = [f"{i + 1}. {fmap.get(fid, '(未知文件)')}" for i, fid in enumerate(file_order)]
-            if lines:
-                parts.append("===== 行序号 → 文件名 =====\n" + "\n".join(lines))
         except Exception:
             pass
 
-    return "\n\n".join(parts)
+    parts = []
+    parts.append(
+        "===== 批次汇总表（每行 = 一个文件，内容已用开始/结束标记分块）=====\n"
+        "格式定义：每个文件的内容块以「▦ 文件内容开始（行号 N / 文件名：xxx）」开头，"
+        "以「▦ 文件内容结束（行号 N）」结尾；块内每行一条「字段名: 字段值」。"
+        "请根据块首标明的「文件名 / 行号」定位内容，并在作答时仅引用对应文件块内的字段。"
+    )
+
+    if not rows:
+        parts.append("（汇总表暂无数据行）")
+    else:
+        for i, row in enumerate(rows, 1):
+            fname = (
+                fmap.get(file_order[i - 1], "(未知文件)")
+                if (i - 1) < len(file_order)
+                else "(未知文件)"
+            )
+            kv_lines = _row_to_kv(headers, row)
+            kv_text = "\n".join(f"  {line}" for line in kv_lines)
+            parts.append(
+                f"▦ 文件内容开始（行号 {i} / 文件名：{fname}）\n"
+                f"{kv_text}\n"
+                f"▦ 文件内容结束（行号 {i}）"
+            )
+
+    text = "\n\n".join(parts)
+    if len(text) > _MAX_TABLE_CHARS:
+        text = text[:_MAX_TABLE_CHARS] + "\n…（汇总表内容已截断）"
+    return text
+
+
+def _parse_json(raw):
+    """安全解析 batch_table：支持 dict / list / JSON 字符串。"""
+    if isinstance(raw, (dict, list)):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            return json.loads(raw)
+        except Exception:
+            return None
+    return None
+
+
+def _row_to_kv(headers, row):
+    """把一行（dict 或 list）转成 ['字段名: 字段值', ...] 列表。"""
+    if isinstance(row, dict):
+        return [f"{k}: {v}" for k, v in row.items()]
+    if isinstance(row, (list, tuple)):
+        if headers and len(headers) == len(row):
+            return [f"{h}: {v}" for h, v in zip(headers, row)]
+        return [str(x) for x in row]
+    return [str(row)]
 
 
 @router.get("/{batch_id}/chat")
