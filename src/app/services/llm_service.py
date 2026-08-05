@@ -47,6 +47,51 @@ def _clean_ocr_md(text: str) -> str:
         out.append(s)
     return "\n".join(out)
 
+
+def _strip_cell_label(value: str, header: str) -> str:
+    """兜底：若单元格值以『字段名（+可选括号注释）+ 分隔符』开头，去掉该前缀，仅留数据。
+
+    例如 header="甲方"、value="甲方：某某公司" -> "某某公司"；
+    value="甲方（盖章）：某某公司" -> "某某公司"；value="甲方：：某某" -> "某某"。
+    仅在能明确识别『字段名 + 分隔符』时才剥离，避免误删合法数据。
+    """
+    if not value or not header:
+        return value
+    v = value.strip()
+    h = header.strip()
+    if not h:
+        return v
+    # 字段名 + 可选括号注释(（盖章）/ (签名) 等) + 一个或多个分隔符(:：:-=等)
+    pat = re.compile(r"^\s*" + re.escape(h) + r"(?:（[^）]*）|\([^)]*\))?\s*[:：\-－–—=]+\s*")
+    m = pat.match(v)
+    if m and m.end() < len(v):
+        return v[m.end():].strip()
+    return v
+
+
+def _strip_labels_from_result(result):
+    """对 LLM 返回的 tables 做兜底清洗：去掉单元格值里重复出现的字段名/标签前缀。"""
+    if isinstance(result, dict):
+        tables = result.get("tables")
+        if isinstance(tables, list):
+            for t in tables:
+                if not isinstance(t, dict):
+                    continue
+                headers = t.get("headers") or []
+                rows = t.get("rows") or []
+                if not headers or not rows:
+                    continue
+                for row in rows:
+                    if isinstance(row, dict):
+                        for h in headers:
+                            if h in row and isinstance(row[h], str):
+                                row[h] = _strip_cell_label(row[h], h)
+                    elif isinstance(row, (list, tuple)):
+                        for idx, h in enumerate(headers):
+                            if idx < len(row) and isinstance(row[idx], str):
+                                row[idx] = _strip_cell_label(row[idx], h)
+    return result
+
 SYSTEM_PROMPT = """你是一个表格数据提取助手。
 你的任务是分析经过 OCR 处理的 Markdown 内容，并将其中的结构化表格数据提取为 JSON 格式。
 
@@ -59,8 +104,9 @@ SYSTEM_PROMPT = """你是一个表格数据提取助手。
      （例如写 "2024.1.5" 不要写 "2024-01-05"；写 "HT-2024-001" 不要写 "HT2024001"；写 "12,500.00" 不要写 "12500"）。
    - 中文大写数字保持原文（例如 "壹万圆整" 保持 "壹万圆整"）。
    - 仅当来源明确给出计算或合计时才计算/推导数值，否则保留原文照抄。
-5. 若未找到任何表格，返回空数组。
-6. 只返回合法的 JSON，不要附带任何解释说明。
+5. 单元格的「值」只能是数据本身，绝不可包含该字段的「名称/标签」本身，也不可包含用于分隔的 "："、":"、"-"、括号等结构性文字。例如原文为 "甲方：某某公司"，则字段 "甲方" 的值应仅为 "某某公司"，不要写成 "甲方：某某公司" 或 "甲方（盖章）：某某公司"。
+6. 若未找到任何表格，返回空数组。
+7. 只返回合法的 JSON，不要附带任何解释说明。
 
 输出格式：
 {
@@ -96,8 +142,9 @@ BATCH_SYSTEM_PROMPT = """你是一个表格数据提取助手。
      （例如写 "2024.1.5" 不要写 "2024-01-05"；写 "HT-2024-001" 不要写 "HT2024001"）。
    - 中文大写数字保持原文（例如 "壹万圆整" 保持 "壹万圆整"）。
    - 仅当来源明确给出计算或合计时才计算/推导数值，否则保留原文照抄。
-5. 不得编造数据。若某份文档缺少某个字段，该单元格留空（""）。
-6. 只返回合法的 JSON，不要附带任何解释说明，格式如下：
+5. 单元格的「值」只能是数据本身，绝不可包含字段「名称/标签」本身，也不可包含 "："、":"、"-"、括号等分隔性文字。例如原文为 "甲方：某某公司"，则字段 "甲方" 的值应仅为 "某某公司"，不要写成 "甲方：某某公司" 或 "甲方（盖章）：某某公司"。
+6. 不得编造数据。若某份文档缺少某个字段，该单元格留空（""）。
+7. 只返回合法的 JSON，不要附带任何解释说明，格式如下：
 {
   "tables": [
     {
@@ -261,6 +308,7 @@ class LLMService:
 
         try:
             result = self._extract_json(content)
+            result = _strip_labels_from_result(result)  # 兜底：去掉值里重复的字段名/标签
             return {
                 "success": True,
                 "skipped": False,
@@ -387,6 +435,7 @@ class LLMService:
             }
         try:
             result = self._extract_json(content)
+            result = _strip_labels_from_result(result)  # 兜底：去掉值里重复的字段名/标签
             result["file_order"] = file_order
             return {
                 "success": True,
