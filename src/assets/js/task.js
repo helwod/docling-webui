@@ -178,6 +178,7 @@ function renderStages(pages) {
           `<div class="img-stage">` +
           `<img class="preview" src="${p.url}" alt="第 ${p.page_no} 页" />` +
           `<div class="img-overlay" id="ov-${p.page_no}"></div>` +
+          `<div class="img-markers" id="mk-${p.page_no}"></div>` +
           `</div>` +
           `</div>`
       )
@@ -241,40 +242,60 @@ function markMiddleField(idx) {
   }
 }
 
-// 在 OCR 片段里为某个「识别字段值」找最匹配的片段（子串双向匹配，取最长）
-function mapValueToSegment(value) {
+// 在 OCR 片段里为某个「识别字段值」找最匹配的片段，返回片段对象（含 page_no / bbox）。
+// 匹配优先级：精确相等 > 片段是值的子串 > 值是片段的子串 > 单字字段短片段包含；取最长匹配，保证定位与 OCR 一致。
+function findBestSegment(value, segments) {
   const v = (value || "").trim();
-  if (!v || !currentSegments.length) {
-    toast("无 OCR 定位可映射", "error");
-    return;
-  }
+  if (!v || !segments || !segments.length) return null;
   let best = null;
-  let bestScore = 0;
-  for (const s of currentSegments) {
+  let bestScore = -1;
+  for (const s of segments) {
     const t = (s.text || "").trim();
     if (!t) continue;
-    let score = 0;
-    if (v.includes(t) && t.length > 1) score = t.length; // 片段是值的子串
-    else if (t.includes(v) && v.length > 1) score = v.length; // 值是片段的子串
+    let score = -1;
+    if (v === t) score = 100000 + t.length;                // 精确相等，最高优先级
+    else if (v.length > 1 && t.length > 1) {
+      if (v.includes(t)) score = t.length;                  // 片段是值的子串
+      else if (t.includes(v)) score = v.length;             // 值是片段的子串
+    } else if (v.length === 1 && t.length <= 8 && t.includes(v)) {
+      score = 50 + t.length;                               // 单字字段（男/女/是/否等），仅短片段
+    }
     if (score > bestScore) {
       bestScore = score;
       best = s;
     }
   }
-  if (!best) {
-    toast("未在 OCR 字段中找到匹配：" + v.slice(0, 20), "error");
-    return;
-  }
-  highlightSegment(best);
-  markMiddleField(best.idx);
-  toast("已映射到 OCR 定位：" + best.text.slice(0, 20), "success");
+  return bestScore > 0 ? best : null;
 }
 
-// 右侧「识别的字段」：取自汇总表当前文件对应行，点击 → 映射到 OCR 定位
+// 在左图叠加「识别字段」定位标记（蓝色编号），与中间 OCR 定位位置完全一致，点击可反查字段
+function renderMarkers() {
+  document.querySelectorAll(".img-markers").forEach((m) => (m.innerHTML = ""));
+  if (!recognizedMap.length) return;
+  recognizedMap.forEach((item, i) => {
+    if (!item.seg) return;
+    const mk = document.getElementById("mk-" + item.seg.page_no);
+    if (!mk) return;
+    const dot = document.createElement("div");
+    dot.className = "img-marker";
+    dot.style.left = (((item.seg.bbox.l + item.seg.bbox.r) / 2) * 100).toFixed(2) + "%";
+    dot.style.top = (((item.seg.bbox.t + item.seg.bbox.b) / 2) * 100).toFixed(2) + "%";
+    dot.textContent = String(i + 1);
+    dot.title = `${item.k}：${String(item.v)}\n第 ${item.seg.page_no} 页 · 与 OCR 定位一致`;
+    dot.onclick = () => {
+      const f = recognizedEl.querySelector(`.rec-field[data-i="${i}"]`);
+      if (f) f.click();
+    };
+    mk.appendChild(dot);
+  });
+}
+
+// 右侧「识别的字段」：取自汇总表当前文件对应行，携带与 OCR 定位一致的定位信息
 function renderRecognized() {
   recognizedMap = [];
   if (!batchTable || batchTable.error || !batchTable.tables || !batchTable.tables[0]) {
     recognizedEl.innerHTML = '<span class="muted">（汇总表尚未生成或无结构化字段）</span>';
+    renderMarkers();
     return;
   }
   const table = batchTable.tables[0];
@@ -282,6 +303,7 @@ function renderRecognized() {
   const idx = order.indexOf(currentFileId);
   if (idx < 0 || !table.rows || idx >= table.rows.length) {
     recognizedEl.innerHTML = '<span class="muted">（该文件在汇总表中无对应行）</span>';
+    renderMarkers();
     return;
   }
   const row = table.rows[idx];
@@ -293,27 +315,47 @@ function renderRecognized() {
   }
   if (!entries.length) {
     recognizedEl.innerHTML = '<span class="muted">（无字段）</span>';
+    renderMarkers();
     return;
   }
-  recognizedMap = entries;
-  recognizedEl.innerHTML = entries
-    .map(
-      ([k, v], i) =>
-        `<div class="rec-field" data-i="${i}" title="点击在左图与 OCR 定位一致高亮">` +
-        `<span class="rec-k">${escapeHtml(k)}</span>` +
-        `<span class="rec-v">${escapeHtml(v == null ? "" : v)}</span>` +
+  // 预计算每个字段匹配的 OCR 片段（定位信息由此而来，保证与中间 OCR 定位一致）
+  recognizedMap = entries.map(([k, v]) => ({
+    k,
+    v: v == null ? "" : v,
+    seg: findBestSegment(v, currentSegments),
+  }));
+  recognizedEl.innerHTML = recognizedMap
+    .map((item, i) => {
+      const hasPos = !!item.seg;
+      const posTxt = hasPos
+        ? `第 ${item.seg.page_no} 页 · 定位框 (${item.seg.bbox.l}, ${item.seg.bbox.t})–(${item.seg.bbox.r}, ${item.seg.bbox.b})`
+        : "（无对应 OCR 定位）";
+      return (
+        `<div class="rec-field${hasPos ? "" : " no-pos"}" data-i="${i}" title="点击在左图与中间 OCR 定位一致高亮">` +
+        `<span class="rec-k">${escapeHtml(item.k)}</span>` +
+        `<span class="rec-v">${escapeHtml(item.v)}</span>` +
+        `<span class="rec-pos">📍 ${escapeHtml(posTxt)}</span>` +
         `</div>`
-    )
+      );
+    })
     .join("");
   recognizedEl.querySelectorAll(".rec-field").forEach((btn) => {
     btn.onclick = () => {
       const i = Number(btn.getAttribute("data-i"));
-      const [k, v] = recognizedMap[i];
+      const item = recognizedMap[i];
       recognizedEl.querySelectorAll(".rec-field").forEach((x) => x.classList.remove("active"));
       btn.classList.add("active");
-      mapValueToSegment(v);
+      if (item.seg) {
+        highlightSegment(item.seg);
+        markMiddleField(item.seg.idx);
+        toast("已定位到 OCR：" + item.seg.text.slice(0, 24), "success");
+      } else {
+        toast("未在 OCR 字段中找到匹配：" + String(item.v).slice(0, 20), "error");
+      }
     };
   });
+  // 同步在左图叠加识别字段的定位标记（位置与中间 OCR 定位一致）
+  renderMarkers();
 }
 
 async function loadFileDetail(fid, force = false) {

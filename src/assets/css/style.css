@@ -371,6 +371,21 @@ img.preview { max-width: 100%; border: 1px solid var(--border); border-radius: 8
 .rec-field.active { background: #fef3c7; border-color: #fcd34d; }
 .rec-k { font-size: 12px; color: var(--muted); font-weight: 600; }
 .rec-v { font-size: 13.5px; color: var(--text); word-break: break-word; line-height: 1.5; }
+.rec-pos { font-size: 11px; color: #6b7280; margin-top: 2px; line-height: 1.4; word-break: break-all; }
+.rec-field.no-pos .rec-pos { color: #b91c1c; }
+.rec-field.no-pos { background: #fff7f7; }
+
+/* 左图：识别字段定位标记（蓝色编号，位置与中间 OCR 定位一致） */
+.img-markers { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.img-marker {
+  position: absolute; transform: translate(-50%, -50%);
+  min-width: 16px; height: 16px; padding: 0 3px; border-radius: 9px;
+  background: #2563eb; color: #fff; font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+  pointer-events: auto; cursor: pointer; line-height: 1; user-select: none;
+}
+.img-marker:hover { background: #1d4ed8; }
 
 /* ---- LLM 会话面板 ---- */
 .chat-box {

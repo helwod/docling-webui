@@ -1,0 +1,14 @@
+.git
+.gitignore
+**/__pycache__
+*.pyc
+*.pyo
+src/.env
+src/data
+src/uploads
+*.db
+*.db-shm
+*.db-wal
+*.log
+node_modules
+.DS_Store

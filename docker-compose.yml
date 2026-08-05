@@ -38,9 +38,11 @@ services:
       - docling-net
 
   docling-webui:
-    image: helwod/docling-webui
-    # 本地从源码构建时改用（二选一）：
-    # build: .
+    # 默认从本地源码构建，确保包含最新功能（提示词/回复记录、三栏定位、LLM 会话等）。
+    # 如需改用预构建镜像，把下面两行互换即可，但必须保证该镜像已包含最新代码修复，
+    # 否则「汇总表调用记录」等功能不会生效（这也是之前「提示词/回复没记录」的根因）。
+    build: .
+    # image: helwod/docling-webui
     container_name: docling-webui
     restart: unless-stopped
     ports:

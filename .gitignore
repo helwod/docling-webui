@@ -15,7 +15,6 @@ overview.md
 ssrf_listener.py
 PRD-Docling-WebUI.md
 .gitignore
-.dockerignore
 
 # ===== Python =====
 __pycache__/
