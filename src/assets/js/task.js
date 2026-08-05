@@ -9,7 +9,7 @@ let currentPages = []; // 当前文件预览页列表 [{page_no, url}]
 let isPdf = false; // 当前文件是否为 PDF
 let loadedOcrStatus = null; // 上次加载详情时的 OCR 状态（用于自动刷新判断）
 let recognizedMap = []; // 当前文件识别字段 [{key, value}]，用于右侧点击映射
-let chatHistory = []; // 当前文件的 LLM 会话历史
+let chatHistory = []; // 当前批次的 LLM 会话历史（基于汇总表，每行=一个文件）
 let chatEditIndex = null; // 正在修改的用户消息 seq（null 表示普通发送）
 
 const titleEl = document.getElementById("batch-title");
@@ -159,7 +159,7 @@ function selectFile(fid) {
   currentFileId = fid;
   renderFileList();
   loadFileDetail(fid, true);
-  loadChat();
+  // 会话跟随整个批次（而非单个文件），只在页面加载时加载一次，切文件不再重载
 }
 
 // 渲染预览页：单图或多页 PDF 都统一为「每页一个 .img-stage + overlay」
@@ -617,7 +617,7 @@ document.getElementById("rerun-ocr").onclick = async () => {
 };
 
 // ---------------------------------------------------------------------------
-// LLM 会话：基于当前文件 OCR 原文的多轮对话，支持编辑调整与继续上下文
+// LLM 会话：基于【批次汇总表】（每行 = 一个文件）的多轮对话，支持编辑调整与继续上下文
 // ---------------------------------------------------------------------------
 const chatBox = document.getElementById("chat-box");
 const chatEmpty = document.getElementById("chat-empty");
@@ -626,11 +626,11 @@ const chatHint = document.getElementById("chat-hint");
 const chatSendBtn = document.getElementById("chat-send");
 
 async function loadChat() {
-  if (!currentFileId) return;
+  if (!batchId) return;
   chatEditIndex = null;
   resetChatSendBtn();
   try {
-    const resp = await API.getChat(currentFileId);
+    const resp = await API.getChat(batchId);
     chatHistory = resp.history || [];
     renderChat();
   } catch (e) {
@@ -688,7 +688,7 @@ function startEdit(seq) {
 }
 
 async function sendChat() {
-  if (!currentFileId) return toast("请先选择文件", "error");
+  if (!batchId) return toast("请先打开批次", "error");
   const text = chatInput.value.trim();
   if (!text && chatEditIndex == null) return toast("请输入问题", "error");
 
@@ -702,7 +702,7 @@ async function sendChat() {
   chatSendBtn.disabled = true;
   chatHint.textContent = "LLM 思考中…";
   try {
-    const resp = await API.postChat(currentFileId, body);
+    const resp = await API.postChat(batchId, body);
     chatHistory = resp.history || [];
     chatEditIndex = null;
     chatInput.value = "";
@@ -717,12 +717,12 @@ async function sendChat() {
 }
 
 async function regenerateChat() {
-  if (!currentFileId) return;
+  if (!batchId) return;
   const last = [...chatHistory].reverse().find((m) => m.role === "assistant");
   if (!last) return toast("没有可重新生成的回复", "error");
   chatHint.textContent = "重新生成中…";
   try {
-    const resp = await API.postChat(currentFileId, { regenerate: true });
+    const resp = await API.postChat(batchId, { regenerate: true });
     chatHistory = resp.history || [];
     renderChat();
   } catch (e) {
@@ -733,9 +733,9 @@ async function regenerateChat() {
 }
 
 async function clearChat() {
-  if (!currentFileId) return;
+  if (!batchId) return;
   try {
-    await API.deleteChat(currentFileId);
+    await API.deleteChat(batchId);
     chatHistory = [];
     chatEditIndex = null;
     resetChatSendBtn();

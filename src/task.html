@@ -85,11 +85,11 @@
       </div>
     </div>
 
-    <!-- LLM 会话：基于当前文件上下文多轮对话 -->
+    <!-- LLM 会话：基于批次汇总表（每行 = 一个文件）上下文多轮对话 -->
     <div class="card">
-      <h2>LLM 会话 <span class="muted" style="font-weight:400;font-size:13px">（基于当前文件 OCR 原文，可修改调整并继续上下文）</span></h2>
+      <h2>LLM 会话 <span class="muted" style="font-weight:400;font-size:13px">（基于本批次汇总表，每行 = 一个文件；可修改调整并继续上下文）</span></h2>
       <div class="chat-box" id="chat-box">
-        <div class="chat-empty" id="chat-empty">尚未开始对话。在下方输入问题，例如「提取这份文档的甲方、乙方、合同金额」。</div>
+        <div class="chat-empty" id="chat-empty">尚未开始对话。在下方输入问题，例如「汇总表里金额合计是多少？」「第 3 个文件的甲方是谁？」。</div>
       </div>
       <div class="chat-input-row">
         <textarea id="chat-input" class="chat-input" rows="2" placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"></textarea>

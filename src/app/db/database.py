@@ -73,17 +73,17 @@ async def _init_tables():
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
-        CREATE TABLE IF NOT EXISTS file_chats (
+        CREATE TABLE IF NOT EXISTS batch_chats (
             id TEXT PRIMARY KEY,
-            file_id TEXT NOT NULL,
+            batch_id TEXT NOT NULL,
             seq INTEGER NOT NULL,
             role TEXT NOT NULL CHECK (role IN ('system', 'user', 'assistant')),
             content TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+            FOREIGN KEY (batch_id) REFERENCES batches(id) ON DELETE CASCADE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_file_chats_file_id_seq ON file_chats(file_id, seq);
+        CREATE INDEX IF NOT EXISTS idx_batch_chats_batch_id_seq ON batch_chats(batch_id, seq);
 
         CREATE INDEX IF NOT EXISTS idx_files_batch_id ON files(batch_id);
         CREATE INDEX IF NOT EXISTS idx_files_ocr_status ON files(ocr_status);
@@ -122,6 +122,37 @@ async def _init_tables():
             await db.execute("ALTER TABLE batches ADD COLUMN table_prompt TEXT")
         if "table_reply" not in cols:
             await db.execute("ALTER TABLE batches ADD COLUMN table_reply TEXT")
+    except Exception:
+        pass
+
+    # Migration: 会话表从「单文件」升级为「批次汇总表」层级
+    try:
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='file_chats'"
+        )
+        if await cursor.fetchone():
+            await db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS batch_chats (
+                    id TEXT PRIMARY KEY,
+                    batch_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    role TEXT NOT NULL CHECK (role IN ('system', 'user', 'assistant')),
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+                """
+            )
+            # 把旧的单文件会话按 files.batch_id 映射回所属批次
+            await db.execute(
+                """
+                INSERT INTO batch_chats (id, batch_id, seq, role, content, created_at)
+                SELECT fc.id, f.batch_id, fc.seq, fc.role, fc.content, fc.created_at
+                FROM file_chats fc
+                JOIN files f ON f.id = fc.file_id
+                """
+            )
+            await db.execute("DROP TABLE file_chats")
     except Exception:
         pass
 

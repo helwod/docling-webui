@@ -88,10 +88,10 @@ const API = {
     request("POST", `/files/${fid}/llm`, { body: model ? { model } : {} }),
   rerunOCR: (fid) => request("POST", `/files/${fid}/rerun-ocr`),
 
-  // 文件级 LLM 多轮会话
-  getChat: (fid) => request("GET", `/files/${fid}/chat`),
-  postChat: (fid, body) => request("POST", `/files/${fid}/chat`, { body }),
-  deleteChat: (fid) => request("DELETE", `/files/${fid}/chat`),
+  // 批次（汇总表）级 LLM 多轮会话 —— 上下文为批次汇总表（每行 = 一个文件）
+  getChat: (bid) => request("GET", `/batches/${bid}/chat`),
+  postChat: (bid, body) => request("POST", `/batches/${bid}/chat`, { body }),
+  deleteChat: (bid) => request("DELETE", `/batches/${bid}/chat`),
 
   // 下载 / 查看用直链
   exportBatchUrl: (id, fmt = "both") => `${API_BASE}/batches/${id}/export?format=${fmt}`,

@@ -57,6 +57,18 @@ class FileRepo:
         files = [dict(r) for r in rows]
         return files, total
 
+    async def list_by_ids(self, file_ids: list[str]) -> list[dict]:
+        """按给定 id 列表批量取文件（保持入参顺序）。用于会话中映射文件名。"""
+        if not file_ids:
+            return []
+        placeholders = ",".join("?" for _ in file_ids)
+        cursor = await self.db.execute(
+            f"SELECT id, original_filename FROM files WHERE id IN ({placeholders})",
+            tuple(file_ids),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
     async def update_ocr_status(
         self, file_id: str, status: str, **kwargs
     ) -> None:
