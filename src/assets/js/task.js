@@ -242,23 +242,81 @@ function markMiddleField(idx) {
   }
 }
 
+// 归一化：去空白、去常见标点、全角转半角、转小写，提升 OCR 噪声下的匹配鲁棒性
+function normText(s) {
+  if (!s) return "";
+  return String(s)
+    .replace(/\s+/g, "")
+    .replace(/[，。．、：:；;（）()\[\]【】{}“”"''‘’·—_/\\|！!？?~～*]/g, "")
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[Ａ-Ｚａ-ｚ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .toLowerCase();
+}
+
+// 最长公共子序列长度（用于近似匹配评分，容忍错别字/缺字）
+function lcsLen(a, b) {
+  const m = a.length, n = b.length;
+  if (!m || !n) return 0;
+  const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+  return dp[m][n];
+}
+
+// 提取连续数字段并去掉前导零（用于校验日期/编号类字段的数字一致性）
+function digitSegs(s) {
+  return (s.match(/\d+/g) || []).map((x) => x.replace(/^0+/, "") || "0");
+}
+// 判断 value 的数字段序列是否按相同顺序出现在 text 的数字段中（容忍 OCR 误识导致的零缺失/补零）
+function digitsMatch(nv, nt) {
+  const a = digitSegs(nv), b = digitSegs(nt);
+  if (a.length === 0) return true; // 无数字则不做数字约束
+  let j = 0;
+  for (let i = 0; i < a.length; i++) {
+    while (j < b.length && b[j] !== a[i]) j++;
+    if (j >= b.length) return false; // value 尚有数字段但 text 已耗尽 → 数字不一致
+    j++;
+  }
+  return true;
+}
+
 // 在 OCR 片段里为某个「识别字段值」找最匹配的片段，返回片段对象（含 page_no / bbox）。
-// 匹配优先级：精确相等 > 片段是值的子串 > 值是片段的子串 > 单字字段短片段包含；取最长匹配，保证定位与 OCR 一致。
+// 定位依据（优先级从高到低）：
+//   1) 归一化后精确相等；
+//   2) 归一化后 值是片段的子串（OCR 整行包含字段值，最常见）→ 片段越短越精确；
+//      单字字段（男/女/是/否等）仅限较短片段，避免误匹配整页长文本；
+//   3) 归一化后 片段是值的子串（字段值较长，OCR 行只是其一部分）→ 片段越长越特异；
+//   4) 归一化后最长公共子序列占比 ≥ 0.6 且数字段顺序一致的近似匹配（容忍 OCR 错别字/空格/全角半角/
+//      日期数字规范化差异，例如 "2024.1.5" 与 "2024-01-05" 仍能定位到同一行）。
 function findBestSegment(value, segments) {
   const v = (value || "").trim();
   if (!v || !segments || !segments.length) return null;
+  const nv = normText(v);
+  if (!nv) return null;
   let best = null;
-  let bestScore = -1;
+  let bestScore = 0;
   for (const s of segments) {
     const t = (s.text || "").trim();
     if (!t) continue;
-    let score = -1;
-    if (v === t) score = 100000 + t.length;                // 精确相等，最高优先级
-    else if (v.length > 1 && t.length > 1) {
-      if (v.includes(t)) score = t.length;                  // 片段是值的子串
-      else if (t.includes(v)) score = v.length;             // 值是片段的子串
-    } else if (v.length === 1 && t.length <= 8 && t.includes(v)) {
-      score = 50 + t.length;                               // 单字字段（男/女/是/否等），仅短片段
+    const nt = normText(t);
+    if (!nt) continue;
+    let score = 0;
+    if (nv === nt) {
+      score = 1e6 + nv.length;                             // 精确相等（最高优先级）
+    } else if (nt.includes(nv)) {
+      // 值是片段子串：片段越短越精确；单字字段（男/女/是/否）仅限较短片段，避免误匹配超长行
+      if (nv.length > 1 || nt.length <= 12) score = 1e5 + nv.length * 100 - nt.length;
+    } else if (nv.includes(nt)) {
+      score = 1e4 + nt.length;                             // 片段是值子串：片段越长越特异
+    } else {
+      const lcs = lcsLen(nv, nt);
+      const ratio = lcs / Math.min(nv.length, nt.length);
+      const maxLen = Math.max(nv.length, nt.length);
+      // 近似匹配需数字段顺序一致，避免 "2024-01-05" 误命中 "合同编号 HT-2024-001" 这类仅数字巧合的行
+      if (lcs >= 2 && ratio >= 0.6 && maxLen >= 3 && digitsMatch(nv, nt)) {
+        score = 1000 + lcs * 10 * ratio;                  // 近似匹配（最低优先级）
+      }
     }
     if (score > bestScore) {
       bestScore = score;
