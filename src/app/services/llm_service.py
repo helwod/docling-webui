@@ -12,15 +12,40 @@ def _clean_json_text(s: str) -> str:
     return s.strip()
 
 
-def _compact_ocr_md(text: str) -> str:
-    """过滤 OCR Markdown 中的空行（仅含空白字符的行），减少提示词噪声与 token 占用。
+def _clean_ocr_md(text: str) -> str:
+    """清理注入 LLM 提示词的 OCR Markdown：去掉空行与 Markdown 格式标记，保留可读文本与表格数据。
 
-    逐行处理：丢弃空行/纯空白行，保留有内容的行（含表格分隔行、标题、列表等）。
+    处理规则：
+    - 丢弃空行/纯空白行
+    - 丢弃表格分隔行（如 |---|---|，仅由 |、-、:、空格构成）
+    - 去掉标题 # 标记、加粗/斜体 ** *、行内代码 `、引用 >、列表符号 - * + 等语法标记，保留其文字
+    - 链接 [text](url) / 图片 ![alt](url) 仅保留文字，丢弃 url
+    - 保留表格数据行中的 | 列分隔（用于区分列），不破坏数据结构
     """
     if not text:
         return ""
-    lines = [ln for ln in text.split("\n") if ln.strip()]
-    return "\n".join(lines)
+    out = []
+    for line in text.split("\n"):
+        s = line.strip()
+        if not s:
+            continue  # 空行/纯空白行
+        # 表格分隔行：仅含 |、-、:、空格
+        if "-" in s and re.match(r"^\|?[\s:|-]+\|?$", s):
+            continue
+        # 去掉行首标题 # 号
+        s = re.sub(r"^#{1,6}\s*", "", s)
+        # 去掉行首列表符号 - * + （后接空白）
+        s = re.sub(r"^([-*+])\s+", "", s)
+        # 去掉引用 >
+        s = re.sub(r"^>\s*", "", s)
+        # 去掉加粗/斜体/行内代码标记
+        s = s.replace("**", "").replace("__", "").replace("`", "")
+        s = re.sub(r"(?<!\*)\*(?!\*)", "", s)
+        # 图片/链接：![alt](url) 或 [text](url) -> 保留文字
+        s = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", s)
+        s = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", s)
+        out.append(s)
+    return "\n".join(out)
 
 SYSTEM_PROMPT = """你是一个表格数据提取助手。
 你的任务是分析经过 OCR 处理的 Markdown 内容，并将其中的结构化表格数据提取为 JSON 格式。
@@ -225,7 +250,7 @@ class LLMService:
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
-                ocr_md_content=_compact_ocr_md(ocr_md_content)
+                ocr_md_content=_clean_ocr_md(ocr_md_content)
             )},
         ]
         content, llm_err = await self._chat_json(client, model, messages=messages, timeout=60)
@@ -314,8 +339,8 @@ class LLMService:
             if not content or f.get("ocr_status") != "completed":
                 content = f"[OCR 未完成或失败：{f.get('original_filename')}]"
             else:
-                # 过滤空行，降低提示词噪声与 token 占用
-                content = _compact_ocr_md(content)
+                # 过滤空行与 Markdown 格式标记，降低提示词噪声与 token 占用
+                content = _clean_ocr_md(content)
             docs.append(
                 f"===== DOCUMENT {i} (文件名: {f.get('original_filename')}) =====\n{content}"
             )
