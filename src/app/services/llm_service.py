@@ -11,6 +11,17 @@ def _clean_json_text(s: str) -> str:
     s = re.sub(r"/\*.*?\*/", "", s, flags=re.DOTALL)  # 块注释
     return s.strip()
 
+
+def _compact_ocr_md(text: str) -> str:
+    """过滤 OCR Markdown 中的空行（仅含空白字符的行），减少提示词噪声与 token 占用。
+
+    逐行处理：丢弃空行/纯空白行，保留有内容的行（含表格分隔行、标题、列表等）。
+    """
+    if not text:
+        return ""
+    lines = [ln for ln in text.split("\n") if ln.strip()]
+    return "\n".join(lines)
+
 SYSTEM_PROMPT = """你是一个表格数据提取助手。
 你的任务是分析经过 OCR 处理的 Markdown 内容，并将其中的结构化表格数据提取为 JSON 格式。
 
@@ -214,7 +225,7 @@ class LLMService:
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
-                ocr_md_content=ocr_md_content
+                ocr_md_content=_compact_ocr_md(ocr_md_content)
             )},
         ]
         content, llm_err = await self._chat_json(client, model, messages=messages, timeout=60)
@@ -302,6 +313,9 @@ class LLMService:
             content = (f.get("ocr_md_content") or "").strip()
             if not content or f.get("ocr_status") != "completed":
                 content = f"[OCR 未完成或失败：{f.get('original_filename')}]"
+            else:
+                # 过滤空行，降低提示词噪声与 token 占用
+                content = _compact_ocr_md(content)
             docs.append(
                 f"===== DOCUMENT {i} (文件名: {f.get('original_filename')}) =====\n{content}"
             )
