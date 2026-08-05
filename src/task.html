@@ -26,6 +26,20 @@
         <button class="btn btn-sm" id="rerun-table">重新生成汇总表</button>
       </div>
       <div id="summary-msg" class="hint"></div>
+
+      <details class="mt table-io">
+        <summary>本次汇总表 LLM 调用记录（发起的提示词 / 原始回复）</summary>
+        <div class="io-grid">
+          <div class="io-col">
+            <h4>发起的（提示词）</h4>
+            <pre class="ocr" id="table-prompt">（暂无记录）</pre>
+          </div>
+          <div class="io-col">
+            <h4>回复（原始响应）</h4>
+            <pre class="ocr" id="table-reply">（暂无记录）</pre>
+          </div>
+        </div>
+      </details>
     </div>
 
     <div class="card">

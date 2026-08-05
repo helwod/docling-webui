@@ -39,7 +39,9 @@ async def _init_tables():
             processed_files INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            deleted_at TEXT
+            deleted_at TEXT,
+            table_prompt TEXT,
+            table_reply TEXT
         );
 
         CREATE TABLE IF NOT EXISTS files (
@@ -116,6 +118,10 @@ async def _init_tables():
             await db.execute("ALTER TABLE batches ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
         if "enable_llm" not in cols:
             await db.execute("ALTER TABLE batches ADD COLUMN enable_llm INTEGER NOT NULL DEFAULT 1")
+        if "table_prompt" not in cols:
+            await db.execute("ALTER TABLE batches ADD COLUMN table_prompt TEXT")
+        if "table_reply" not in cols:
+            await db.execute("ALTER TABLE batches ADD COLUMN table_reply TEXT")
     except Exception:
         pass
 

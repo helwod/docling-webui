@@ -38,6 +38,8 @@ class BatchResponse(BaseModel):
     paused: int = 0
     priority: int = 0
     enable_llm: int = 1
+    table_prompt: Optional[str] = None
+    table_reply: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

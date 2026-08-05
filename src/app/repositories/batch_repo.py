@@ -72,10 +72,26 @@ class BatchRepo:
         )
         await self.db.commit()
 
-    async def update_batch_table(self, batch_id: str, table_json: Optional[str]) -> None:
+    async def update_batch_table(
+        self,
+        batch_id: str,
+        table_json: Optional[str],
+        prompt: Optional[str] = None,
+        reply: Optional[str] = None,
+    ) -> None:
+        """更新批次汇总表；可选一并记录本次 LLM 调用的提示词(prompt)与原始回复(reply)。"""
+        sets = ["batch_table = ?"]
+        params: list = [table_json]
+        if prompt is not None:
+            sets.append("table_prompt = ?")
+            params.append(prompt)
+        if reply is not None:
+            sets.append("table_reply = ?")
+            params.append(reply)
+        params.append(batch_id)
         await self.db.execute(
-            "UPDATE batches SET batch_table = ? WHERE id = ?",
-            (table_json, batch_id),
+            f"UPDATE batches SET {', '.join(sets)} WHERE id = ?",
+            params,
         )
         await self.db.commit()
 

@@ -324,6 +324,14 @@ img.preview { max-width: 100%; border: 1px solid var(--border); border-radius: 8
 .summary-table th { background: #f8fafc; position: sticky; top: 0; }
 .summary-scroll { max-height: 440px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
 
+/* ---- 汇总表 LLM 调用记录（发起的 / 回复）---- */
+.table-io { margin-top: 14px; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; background: #f8fafc; }
+.table-io > summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--text); }
+.io-grid { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+.io-grid .io-col { flex: 1 1 320px; min-width: 280px; }
+.io-grid .io-col h4 { margin: 4px 0 6px; font-size: 12.5px; color: var(--muted); }
+.io-grid .io-col pre.ocr { max-height: 320px; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+
 /* ---- PDF 多页预览 ---- */
 .pdf-pages { display: flex; flex-direction: column; gap: 18px; }
 .img-page {

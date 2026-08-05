@@ -252,11 +252,16 @@ class LLMService:
         user_prompt = BATCH_USER_TEMPLATE.format(
             n=len(files), documents="\n\n".join(docs)
         )
+        # 记录「发起的」提示词（system + user 合并为可读文本），供审计/回溯
+        prompt_text = f"[SYSTEM]\n{BATCH_SYSTEM_PROMPT}\n\n[USER]\n{user_prompt}"
+
         api_key, base_url, model = await self._get_credentials()
         if not api_key or api_key == "your-api-key-here":
             return {
                 "success": False,
                 "error": "LLM API key not configured",
+                "prompt": prompt_text,
+                "raw_reply": None,
                 "file_order": file_order,
             }
 
@@ -273,12 +278,15 @@ class LLMService:
                     timeout=120,
                     response_format={"type": "json_object"},
                 )
+                raw_reply = content  # 记录「回复」的原始响应（未解析 JSON 前）
                 if not content:
                     if attempt == 0:
                         continue
                     return {
                         "success": False,
                         "error": "Empty LLM response",
+                        "prompt": prompt_text,
+                        "raw_reply": raw_reply,
                         "file_order": file_order,
                     }
                 result = self._extract_json(content)
@@ -288,6 +296,8 @@ class LLMService:
                     "skipped": False,
                     "result": result,
                     "model": model,
+                    "prompt": prompt_text,
+                    "raw_reply": raw_reply,
                     "file_order": file_order,
                 }
             except Exception as e:
@@ -296,10 +306,14 @@ class LLMService:
                 return {
                     "success": False,
                     "error": f"LLM call failed: {e}",
+                    "prompt": prompt_text,
+                    "raw_reply": None,
                     "file_order": file_order,
                 }
         return {
             "success": False,
             "error": "LLM call failed after retry",
+            "prompt": prompt_text,
+            "raw_reply": None,
             "file_order": file_order,
         }

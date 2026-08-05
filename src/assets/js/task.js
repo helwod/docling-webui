@@ -16,6 +16,8 @@ const titleEl = document.getElementById("batch-title");
 const metaEl = document.getElementById("batch-meta");
 const summaryEl = document.getElementById("summary-table");
 const summaryMsg = document.getElementById("summary-msg");
+const tablePromptEl = document.getElementById("table-prompt");
+const tableReplyEl = document.getElementById("table-reply");
 const fileListEl = document.getElementById("file-list");
 const imageBox = document.getElementById("image-box");
 const imgHint = document.getElementById("img-hint");
@@ -104,6 +106,13 @@ function renderSummary() {
   summaryEl.innerHTML =
     `<p class="hint">共 ${table.rows ? table.rows.length : 0} 行 × ${table.headers ? table.headers.length : 0} 列。</p>` +
     renderTable(table.headers, table.rows);
+}
+
+function renderTableIO(batch) {
+  const prompt = batch && batch.table_prompt;
+  const reply = batch && batch.table_reply;
+  tablePromptEl.textContent = prompt ? prompt : "（暂无记录）";
+  tableReplyEl.textContent = reply ? reply : "（暂无记录）";
 }
 
 function renderRowForFile(fid) {
@@ -365,6 +374,7 @@ async function load() {
     fileItems = filesData.items || [];
     ensureFilenameColumn(batchTable, fileItems);
     renderSummary();
+    renderTableIO(batch);
     renderFileList();
 
     if (currentFileId && fileItems.some((f) => f.id === currentFileId)) {

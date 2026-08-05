@@ -562,7 +562,10 @@ async def rerun_batch_table(
         return ApiResponse(data={"success": True, "skipped": True})
     if result["success"]:
         await repos["batch_repo"].update_batch_table(
-            batch_id, json.dumps(result["result"], ensure_ascii=False)
+            batch_id,
+            json.dumps(result["result"], ensure_ascii=False),
+            prompt=result.get("prompt"),
+            reply=result.get("raw_reply"),
         )
         return ApiResponse(data={"success": True, "model": result.get("model")})
     await repos["batch_repo"].update_batch_table(
@@ -570,5 +573,7 @@ async def rerun_batch_table(
         json.dumps(
             {"error": result.get("error", "汇总表生成失败")}, ensure_ascii=False
         ),
+        prompt=result.get("prompt"),
+        reply=result.get("raw_reply"),
     )
     return ApiResponse(data={"success": False, "error": result.get("error")})
