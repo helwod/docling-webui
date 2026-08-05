@@ -426,13 +426,31 @@ document.getElementById("export-html").onclick = () => {
 };
 document.getElementById("rerun-table").onclick = async () => {
   if (!batchId) return;
+  const btn = document.getElementById("rerun-table");
+  btn.disabled = true;
   summaryMsg.textContent = "正在重新生成汇总表…";
   try {
     await API.rerunBatchTable(batchId);
-    summaryMsg.textContent = "已触发重新生成，稍后自动刷新。";
-    setTimeout(load, 1500);
+    // 后端为同步生成（返回时即已写入 DB），直接重新拉取整页数据
+    await load();
+    summaryMsg.textContent = "已重新生成汇总表，调用记录已刷新。";
   } catch (e) {
-    summaryMsg.textContent = "重新生成失败：" + e.message;
+    // 即便失败也刷新，便于在「调用记录」中查看错误原文
+    await load();
+    summaryMsg.textContent = "重新生成失败：" + e.message + "（详见下方调用记录）";
+  } finally {
+    btn.disabled = false;
+  }
+  // 展开并高亮「调用记录」面板，确保用户看到刷新结果
+  const ioDetails = document.querySelector(".table-io");
+  if (ioDetails) {
+    ioDetails.open = true;
+    const panel = ioDetails.querySelector(".io-grid");
+    if (panel) {
+      panel.classList.remove("io-flash");
+      void panel.offsetWidth; // 触发重排以重启动画
+      panel.classList.add("io-flash");
+    }
   }
 };
 document.getElementById("export-file").onclick = () => {
