@@ -1,4 +1,5 @@
 import json
+import re
 from openai import AsyncOpenAI
 from app.repositories.setting_repo import SettingRepo
 
@@ -127,6 +128,27 @@ class LLMService:
                 content += piece
         return content
 
+    async def _chat_json(self, client, model, messages, timeout=60):
+        """容错调用 LLM 取 JSON 文本。
+
+        部分私有/本地 OpenAI 兼容端点（如自建 vLLM、部分国产模型网关）不支持
+        response_format={"type":"json_object"}，直接传该参数会让调用报错/返回空，
+        导致「接受 LLM 返回数据失败」。
+        这里先尝试 json_object 模式；若抛异常则自动降级为普通模式（只靠 prompt
+        约束 + _extract_json 解析），最大化对各类端点的兼容性。
+        返回 (content, error)：error 为 None 表示已拿到响应（content 可能为空，由调用方判断）。
+        """
+        last_err = None
+        for rf in ({"type": "json_object"}, None):
+            try:
+                content = await self._stream_chat(
+                    client, model, messages=messages, timeout=timeout, response_format=rf
+                )
+                return content, None
+            except Exception as e:
+                last_err = str(e)
+        return None, last_err
+
     @staticmethod
     def _extract_json(text):
         """从 LLM 返回文本中提取 JSON，容忍 markdown 代码围栏与前后杂项文本。"""
@@ -146,7 +168,14 @@ class LLMService:
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end != -1 and end > start:
-            return json.loads(text[start : end + 1])
+            frag = text[start : end + 1]
+            # 修复常见 LLM 输出瑕疵：尾随逗号、对象/数组尾部的多余逗号、注释
+            frag = re.sub(r",(\s*[}\]])", r"\1", frag)
+            frag = re.sub(r"//[^\n]*", "", frag)
+            try:
+                return json.loads(frag)
+            except Exception:
+                pass
         raise ValueError("LLM 返回内容中未找到合法 JSON")
 
     async def extract_tables(self, ocr_md_content: str, model_override: str = None) -> dict:
@@ -160,38 +189,32 @@ class LLMService:
 
         client = self._build_client(api_key, base_url)
 
-        for attempt in range(2):  # Retry once
-            try:
-                content = await self._stream_chat(
-                    client,
-                    model,
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
-                            ocr_md_content=ocr_md_content
-                        )},
-                    ],
-                    timeout=60,
-                    response_format={"type": "json_object"},
-                )
-                if not content:
-                    if attempt == 0:
-                        continue
-                    return {"success": False, "error": "Empty LLM response"}
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
+                ocr_md_content=ocr_md_content
+            )},
+        ]
+        content, llm_err = await self._chat_json(client, model, messages=messages, timeout=60)
+        if llm_err:
+            return {"success": False, "error": f"LLM call failed: {llm_err}"}
+        if not content:
+            return {"success": False, "error": "Empty LLM response"}
 
-                result = self._extract_json(content)
-                return {
-                    "success": True,
-                    "skipped": False,
-                    "result": result,
-                    "model": model,
-                }
-            except Exception as e:
-                if attempt == 0:
-                    continue
-                return {"success": False, "error": f"LLM call failed: {str(e)}"}
-
-        return {"success": False, "error": "LLM call failed after retry"}
+        try:
+            result = self._extract_json(content)
+            return {
+                "success": True,
+                "skipped": False,
+                "result": result,
+                "model": model,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"LLM 返回无法解析为 JSON：{str(e)}",
+                "raw_reply": content,
+            }
 
     async def chat(self, messages: list[dict], model_override: str = None, timeout: int = 90) -> str:
         """多轮对话：messages 为 [{role, content}] 列表（含 system/user/assistant）。
@@ -279,54 +302,45 @@ class LLMService:
             }
 
         client = self._build_client(api_key, base_url)
-        for attempt in range(2):
-            try:
-                content = await self._stream_chat(
-                    client,
-                    model,
-                    messages=[
-                        {"role": "system", "content": BATCH_SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    timeout=120,
-                    response_format={"type": "json_object"},
-                )
-                raw_reply = content  # 记录「回复」的原始响应（未解析 JSON 前）
-                if not content:
-                    if attempt == 0:
-                        continue
-                    return {
-                        "success": False,
-                        "error": "Empty LLM response",
-                        "prompt": prompt_text,
-                        "raw_reply": raw_reply,
-                        "file_order": file_order,
-                    }
-                result = self._extract_json(content)
-                result["file_order"] = file_order
-                return {
-                    "success": True,
-                    "skipped": False,
-                    "result": result,
-                    "model": model,
-                    "prompt": prompt_text,
-                    "raw_reply": raw_reply,
-                    "file_order": file_order,
-                }
-            except Exception as e:
-                if attempt == 0:
-                    continue
-                return {
-                    "success": False,
-                    "error": f"LLM call failed: {e}",
-                    "prompt": prompt_text,
-                    "raw_reply": None,
-                    "file_order": file_order,
-                }
-        return {
-            "success": False,
-            "error": "LLM call failed after retry",
-            "prompt": prompt_text,
-            "raw_reply": None,
-            "file_order": file_order,
-        }
+        messages = [
+            {"role": "system", "content": BATCH_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+        content, llm_err = await self._chat_json(client, model, messages=messages, timeout=120)
+        raw_reply = content  # 记录「回复」的原始响应（未解析 JSON 前）
+        if llm_err:
+            return {
+                "success": False,
+                "error": f"LLM call failed: {llm_err}",
+                "prompt": prompt_text,
+                "raw_reply": None,
+                "file_order": file_order,
+            }
+        if not content:
+            return {
+                "success": False,
+                "error": "Empty LLM response",
+                "prompt": prompt_text,
+                "raw_reply": raw_reply,
+                "file_order": file_order,
+            }
+        try:
+            result = self._extract_json(content)
+            result["file_order"] = file_order
+            return {
+                "success": True,
+                "skipped": False,
+                "result": result,
+                "model": model,
+                "prompt": prompt_text,
+                "raw_reply": raw_reply,
+                "file_order": file_order,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"LLM 返回无法解析为 JSON：{str(e)}",
+                "prompt": prompt_text,
+                "raw_reply": content,
+                "file_order": file_order,
+            }
