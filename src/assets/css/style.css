@@ -399,6 +399,32 @@ img.preview { max-width: 100%; border: 1px solid var(--border); border-radius: 8
   padding: 2px 6px; border-radius: 5px;
 }
 .chat-ops button:hover { background: #eef2f7; color: var(--text); }
+
+/* 系统角色定义块（会话顶部，常驻可折叠） */
+.chat-role-block {
+  border: 1px solid var(--border, #e2e8f0);
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+}
+.chat-role-block > summary {
+  cursor: pointer; list-style: none; user-select: none;
+  font-weight: 600; color: var(--text);
+}
+.chat-role-block > summary::-webkit-details-marker { display: none; }
+.chat-role-block > summary::before { content: "\25B8 "; color: var(--muted); }
+.chat-role-block[open] > summary::before { content: "\25BE "; }
+.chat-role-body {
+  margin-top: 6px; color: var(--text); line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 160px; overflow: auto;
+}
+/* 用户消息初始 / 继续 标签 */
+.chat-role.role-initial { color: var(--primary); font-weight: 600; }
+.chat-role.role-continue { color: #0f766e; font-weight: 600; }
+
 .chat-input-row { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .chat-input { resize: vertical; min-height: 44px; }
 .chat-actions { margin-top: 0; }

@@ -167,11 +167,12 @@ def _row_to_kv(headers, row):
 
 @router.get("/{batch_id}/chat")
 async def get_chat(batch_id: str, repos=Depends(_get_repos)):
-    """返回该批次已有的对话历史（按 seq 升序）。"""
+    """返回该批次已有的对话历史（按 seq 升序）与生效的系统角色定义。"""
     if not await repos["batch_repo"].get_by_id(batch_id):
         raise HTTPException(status_code=404, detail={"code": 404, "message": "Batch not found"})
     history = await repos["chat_repo"].get_history(batch_id)
-    return {"code": 0, "data": {"batch_id": batch_id, "history": history}}
+    role = (await repos["setting_repo"].get("llm_role") or "").strip() or DEFAULT_LLM_ROLE
+    return {"code": 0, "data": {"batch_id": batch_id, "history": history, "effective_role": role}}
 
 
 @router.post("/{batch_id}/chat")
@@ -189,6 +190,8 @@ async def send_chat(batch_id: str, body: ChatSend, repos=Depends(_get_repos)):
 
     chat_repo = repos["chat_repo"]
     history = await chat_repo.get_history(batch_id)
+    # 生效的系统角色定义（空则用内置默认），供所有返回路径透出，便于前端在会话内容中展示
+    role = (await repos["setting_repo"].get("llm_role") or "").strip() or DEFAULT_LLM_ROLE
     is_edit = body.edit_index is not None
     is_regen = bool(body.regenerate)
     user_msg = (body.message or "").strip()
@@ -228,7 +231,7 @@ async def send_chat(batch_id: str, body: ChatSend, repos=Depends(_get_repos)):
             history.append(assistant_row)
             return {
                 "code": 0,
-                "data": {"batch_id": batch_id, "history": history, "table_updated": False},
+                "data": {"batch_id": batch_id, "history": history, "table_updated": False, "effective_role": role},
             }
 
         files = await repos["file_repo"].get_all_for_consolidated(batch_id)
@@ -261,12 +264,12 @@ async def send_chat(batch_id: str, body: ChatSend, repos=Depends(_get_repos)):
                 "history": history,
                 "table_updated": bool(regen.get("success")),
                 "table": regen.get("result") if regen.get("success") else None,
+                "effective_role": role,
             },
         }
 
     # ===== 模式 B：普通多轮问答（基于汇总表上下文）=====
     # 组装发给 LLM 的 messages：system（含 LLM 角色定义 + 批次汇总表上下文 + 当初生成表的提示词/原始回复）+ 完整历史
-    role = (await repos["setting_repo"].get("llm_role") or "").strip() or DEFAULT_LLM_ROLE
     table_ctx = _build_table_context(batch, repos["file_repo"])
     system_content = f"{role}\n\n{CHAT_SYSTEM_PROMPT}\n\n{table_ctx}"
     gen_rec = _build_generation_record(batch)
@@ -291,7 +294,7 @@ async def send_chat(batch_id: str, body: ChatSend, repos=Depends(_get_repos)):
     assistant_row = await chat_repo.add_message(batch_id, "assistant", reply)
     history.append(assistant_row)
 
-    return {"code": 0, "data": {"batch_id": batch_id, "history": history}}
+    return {"code": 0, "data": {"batch_id": batch_id, "history": history, "effective_role": role}}
 
 
 @router.delete("/{batch_id}/chat")

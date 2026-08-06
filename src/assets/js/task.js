@@ -11,6 +11,13 @@ let loadedOcrStatus = null; // 上次加载详情时的 OCR 状态（用于自�
 let recognizedMap = []; // 当前文件识别字段 [{key, value}]，用于右侧点击映射
 let chatHistory = []; // 当前批次的 LLM 会话历史（基于汇总表，每行=一个文件）
 let chatEditIndex = null; // 正在修改的用户消息 seq（null 表示普通发送）
+let chatRole = ""; // 当前生效的系统角色定义（用于会话内容展示：系统角色 + 初始/继续标签）
+
+// 内置默认角色（与后端 DEFAULT_LLM_ROLE、设置页一致；后端未返回 effective_role 时兜底）
+const DEFAULT_LLM_ROLE =
+  "你是一个严谨、专业的文档与表格数据助理。" +
+  "你擅长从 OCR 识别的文本中准确抽取结构化字段信息；回答用户问题时使用简体中文、" +
+  "条理清晰、简明扼要；在抽取或修正数据时严格照实、不编造、不臆测。";
 
 const titleEl = document.getElementById("batch-title");
 const metaEl = document.getElementById("batch-meta");
@@ -614,6 +621,7 @@ async function loadChat() {
   try {
     const resp = await API.getChat(batchId);
     chatHistory = resp.history || [];
+    chatRole = resp.effective_role || DEFAULT_LLM_ROLE;
     renderChat();
   } catch (e) {
     chatHistory = [];
@@ -621,26 +629,41 @@ async function loadChat() {
   }
 }
 
+function renderChatRole() {
+  const el = document.getElementById("chat-role-body");
+  if (el) el.textContent = chatRole || DEFAULT_LLM_ROLE;
+}
+
 function renderChat() {
   if (!chatBox) return; // 防御：元素未就绪时不抛 null 错误
+  renderChatRole(); // 顶部「系统角色定义」块始终展示当前生效角色
   let body;
   if (!chatHistory.length) {
     body = `<div class="chat-empty" id="chat-empty">尚未开始对话。在下方输入问题，例如「汇总表里金额合计是多少？」「第 3 个文件的甲方是谁？」。</div>`;
   } else {
+    // 用户消息首条标「初始内容」，其后标「继续内容」；覆盖普通会话与「按指令重新生成」指令
+    let userSeen = false;
     body = chatHistory
       .filter((m) => m.role !== "system")
       .map((m) => {
-        const cls = m.role === "user" ? "me" : "ai";
-        const label = m.role === "user" ? "我" : "AI";
-        const ops =
-          m.role === "user"
-            ? `<div class="chat-ops"><button class="chat-edit" data-seq="${m.seq}">修改</button></div>`
-            : `<div class="chat-ops"><button class="chat-regen" data-seq="${m.seq}">重新生成</button></div>`;
+        if (m.role === "user") {
+          const isInitial = !userSeen;
+          userSeen = true;
+          const tagCls = isInitial ? "role-initial" : "role-continue";
+          const label = isInitial ? "初始内容" : "继续内容";
+          return (
+            `<div class="chat-msg me" data-seq="${m.seq}">` +
+            `<div class="chat-role ${tagCls}">${label}</div>` +
+            `<div class="chat-bubble">${escapeHtml(m.content)}</div>` +
+            `<div class="chat-ops"><button class="chat-edit" data-seq="${m.seq}">修改</button></div>` +
+            `</div>`
+          );
+        }
         return (
-          `<div class="chat-msg ${cls}" data-seq="${m.seq}">` +
-          `<div class="chat-role">${label}</div>` +
+          `<div class="chat-msg ai" data-seq="${m.seq}">` +
+          `<div class="chat-role">AI</div>` +
           `<div class="chat-bubble">${escapeHtml(m.content)}</div>` +
-          ops +
+          `<div class="chat-ops"><button class="chat-regen" data-seq="${m.seq}">重新生成</button></div>` +
           `</div>`
         );
       })
@@ -689,6 +712,7 @@ async function sendChat() {
   try {
     const resp = await API.postChat(batchId, body);
     chatHistory = resp.history || [];
+    chatRole = resp.effective_role || chatRole;
     chatEditIndex = null;
     chatInput.value = "";
     resetChatSendBtn();
@@ -709,6 +733,7 @@ async function regenerateChat() {
   try {
     const resp = await API.postChat(batchId, { regenerate: true });
     chatHistory = resp.history || [];
+    chatRole = resp.effective_role || chatRole;
     renderChat();
   } catch (e) {
     toast("重新生成失败：" + e.message, "error");
@@ -749,6 +774,7 @@ async function regenTableFromChat() {
       regenerate_table: true,
     });
     chatHistory = resp.history || [];
+    chatRole = resp.effective_role || chatRole;
     chatInput.value = "";
     chatEditIndex = null;
     resetChatSendBtn();
