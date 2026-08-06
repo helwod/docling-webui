@@ -520,6 +520,7 @@ class LLMService:
             kwargs["response_format"] = response_format
         stream = await client.chat.completions.create(**kwargs)
         content = ""
+        reasoning = ""
         async for chunk in stream:
             if not getattr(chunk, "choices", None):
                 continue
@@ -527,7 +528,14 @@ class LLMService:
             piece = getattr(delta, "content", None)
             if piece:
                 content += piece
-        return content
+            else:
+                # 兜底：部分端点 / 本地模型（如 Qwen3、Ollama）把思维链放在
+                # delta.reasoning_content，而 content 为空。仅当 content 全程为空时回退用它，
+                # 避免把思维链混进正常答案（正常模型 content 非空，不会走到这里）。
+                rc = getattr(delta, "reasoning_content", None)
+                if rc:
+                    reasoning += rc
+        return content or reasoning
 
     async def _chat_json(self, client, model, messages, timeout=60):
         """容错调用 LLM 取 JSON 文本。
@@ -540,14 +548,23 @@ class LLMService:
         返回 (content, error)：error 为 None 表示已拿到响应（content 可能为空，由调用方判断）。
         """
         last_err = None
+        last_content = None
         for rf in ({"type": "json_object"}, None):
             try:
                 content = await self._stream_chat(
                     client, model, messages=messages, timeout=timeout, response_format=rf
                 )
-                return content, None
+                # 某些本地 / 私有端点不支持 json_object 时并不报错，而是静默返回空 content；
+                # 此时应继续尝试下一种格式，而不是直接把空结果交回去触发 "Empty LLM response"。
+                if content and content.strip():
+                    return content, None
+                last_content = content
             except Exception as e:
                 last_err = str(e)
+        # 所有格式都未产出有效内容：返回最后一次的原始结果（可能为空，由调用方判定），
+        # 若连一次都没成功建立连接则回退报错。
+        if last_content is not None:
+            return last_content, None
         return None, last_err
 
     @staticmethod
