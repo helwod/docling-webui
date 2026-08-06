@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.db.database import get_db
 from app.repositories.setting_repo import SettingRepo
-from app.services.llm_service import LLMService
+from app.services.llm_service import LLMService, DEFAULT_LLM_ROLE
 from app.models.schemas import (
     ApiResponse,
     ConfigResponse,
@@ -28,6 +28,7 @@ async def get_config(repo: SettingRepo = Depends(get_repo)):
         llm_base_url=config.get("llm_base_url", ""),
         llm_model=config.get("llm_model", ""),
         llm_api_key_set=llm_api_key_set,
+        llm_role=config.get("llm_role") or DEFAULT_LLM_ROLE,
         docling_ocr_engine=config.get("docling_ocr_engine", "rapidocr"),
         docling_table_mode=config.get("docling_table_mode", "accurate"),
         docling_image_export_mode=config.get("docling_image_export_mode", "referenced"),
@@ -53,6 +54,7 @@ async def update_config(
         llm_base_url=config.get("llm_base_url", ""),
         llm_model=config.get("llm_model", ""),
         llm_api_key_set=llm_api_key_set,
+        llm_role=config.get("llm_role") or DEFAULT_LLM_ROLE,
         docling_ocr_engine=config.get("docling_ocr_engine", "rapidocr"),
         docling_table_mode=config.get("docling_table_mode", "accurate"),
         docling_image_export_mode=config.get("docling_image_export_mode", "referenced"),

@@ -196,6 +196,7 @@ class ConfigResponseData(BaseModel):
     llm_base_url: str
     llm_model: str
     llm_api_key_set: bool
+    llm_role: str = ""
     docling_ocr_engine: str
     docling_table_mode: str
     docling_image_export_mode: str
@@ -213,6 +214,7 @@ class ConfigUpdate(BaseModel):
     llm_base_url: Optional[str] = None
     llm_model: Optional[str] = None
     llm_api_key: Optional[str] = None
+    llm_role: Optional[str] = None
     docling_ocr_engine: Optional[str] = None
     docling_table_mode: Optional[str] = None
     docling_image_export_mode: Optional[str] = None

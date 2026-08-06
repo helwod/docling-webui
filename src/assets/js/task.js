@@ -106,43 +106,9 @@ function renderSummary() {
     renderTable(table.headers, table.rows);
 }
 
-// 汇总表 LLM 调用记录，渲染进会话内容顶部（不单独显示）
-let chatGenRecord = { prompt: null, reply: null };
-
-function renderTableIO(batch) {
-  chatGenRecord = {
-    prompt: (batch && batch.table_prompt) || null,
-    reply: (batch && batch.table_reply) || null,
-  };
-  // 记录不在此处单独渲染，避免与 loadChat 的 renderChat 重复渲染（导致加载变慢）；
-  // load() 会紧接着调用 loadChat() -> renderChat() 统一渲染会话内容（含本记录块）。
-}
-
-// 调用记录展示上限（避免原始回复/提示词过大导致 innerHTML 渲染卡顿）
-const RECORD_CAP = 8000;
-
-function _capText(s) {
-  if (s == null) return "（暂无记录）";
-  const str = String(s);
-  if (str.length <= RECORD_CAP) return escapeHtml(str);
-  return escapeHtml(str.slice(0, RECORD_CAP)) + "\n…（内容较长，已截断显示）";
-}
-
-// 构建「本次汇总表 LLM 调用记录」块（显示在会话内容顶部）
-function buildChatRecordHtml() {
-  const { prompt, reply } = chatGenRecord;
-  if (!prompt && !reply) return "";
-  const p = _capText(prompt);
-  const r = _capText(reply);
-  return (
-    `<div class="chat-record" id="chat-record">` +
-    `<div class="chat-record-head">本次汇总表 LLM 调用记录（发起的提示词 / 原始回复）</div>` +
-    `<div class="io-grid">` +
-    `<div class="io-col"><h4>发起的（提示词）</h4><pre class="ocr">${p}</pre></div>` +
-    `<div class="io-col"><h4>回复（原始响应）</h4><pre class="ocr">${r}</pre></div>` +
-    `</div></div>`
-  );
-}
+// 注：「本次汇总表 LLM 调用记录（发起的提示词 / 原始回复）」不再在会话内单独展示，
+// 但仍作为会话的 LLM 上下文（见后端 chat.py 的 _build_generation_record）随每次问答注入，
+// 使模型调整/修正汇总表时与原始生成口径一致；清空会话不清除它们，重新生成汇总表时刷新。
 
 function renderRowForFile(fid) {
   if (!batchTable || !batchTable.tables || !batchTable.file_order) {
@@ -551,7 +517,6 @@ async function load() {
     fileItems = filesData.items || [];
     ensureFilenameColumn(batchTable, fileItems);
     renderSummary();
-    renderTableIO(batch);
     renderFileList();
 
     if (currentFileId && fileItems.some((f) => f.id === currentFileId)) {
@@ -618,17 +583,6 @@ document.getElementById("rerun-table").onclick = async () => {
   } finally {
     btn.disabled = false;
   }
-  // 高亮会话内容顶部的「调用记录」块，确保用户看到刷新结果
-  const rec = document.getElementById("chat-record");
-  if (rec) {
-    rec.scrollIntoView({ block: "nearest" });
-    const panel = rec.querySelector(".io-grid");
-    if (panel) {
-      panel.classList.remove("io-flash");
-      void panel.offsetWidth; // 触发重排以重启动画
-      panel.classList.add("io-flash");
-    }
-  }
 };
 document.getElementById("export-file").onclick = () => {
   if (!currentFileId) return toast("请先选择文件", "error");
@@ -669,7 +623,6 @@ async function loadChat() {
 
 function renderChat() {
   if (!chatBox) return; // 防御：元素未就绪时不抛 null 错误
-  const recordHtml = buildChatRecordHtml();
   let body;
   if (!chatHistory.length) {
     body = `<div class="chat-empty" id="chat-empty">尚未开始对话。在下方输入问题，例如「汇总表里金额合计是多少？」「第 3 个文件的甲方是谁？」。</div>`;
@@ -693,7 +646,7 @@ function renderChat() {
       })
       .join("");
   }
-  chatBox.innerHTML = recordHtml + body;
+  chatBox.innerHTML = body;
   if (chatHistory.length) {
     chatBox.querySelectorAll(".chat-edit").forEach((b) => {
       b.onclick = () => startEdit(Number(b.getAttribute("data-seq")));

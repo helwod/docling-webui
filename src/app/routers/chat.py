@@ -9,7 +9,7 @@ from app.repositories.batch_repo import BatchRepo
 from app.repositories.file_repo import FileRepo
 from app.repositories.setting_repo import SettingRepo
 from app.repositories.chat_repo import ChatRepo
-from app.services.llm_service import LLMService
+from app.services.llm_service import LLMService, DEFAULT_LLM_ROLE
 
 router = APIRouter(prefix="/api/v1/batches", tags=["chat"])
 
@@ -265,9 +265,10 @@ async def send_chat(batch_id: str, body: ChatSend, repos=Depends(_get_repos)):
         }
 
     # ===== 模式 B：普通多轮问答（基于汇总表上下文）=====
-    # 组装发给 LLM 的 messages：system（含批次汇总表上下文 + 当初生成表的提示词/原始回复）+ 完整历史
+    # 组装发给 LLM 的 messages：system（含 LLM 角色定义 + 批次汇总表上下文 + 当初生成表的提示词/原始回复）+ 完整历史
+    role = (await repos["setting_repo"].get("llm_role") or "").strip() or DEFAULT_LLM_ROLE
     table_ctx = _build_table_context(batch, repos["file_repo"])
-    system_content = CHAT_SYSTEM_PROMPT + "\n\n" + table_ctx
+    system_content = f"{role}\n\n{CHAT_SYSTEM_PROMPT}\n\n{table_ctx}"
     gen_rec = _build_generation_record(batch)
     if gen_rec:
         system_content += "\n\n" + gen_rec

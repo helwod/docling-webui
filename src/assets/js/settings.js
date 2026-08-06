@@ -34,6 +34,7 @@ async function load() {
     $("llm_base_url").value = c.llm_base_url || "";
     savedModel = c.llm_model || "";
     if (savedModel) ensureModelOption(savedModel, savedModel + "（已保存）");
+    $("llm_role").value = c.llm_role ?? "";
     setSelect("ocr_engine", c.docling_ocr_engine, "rapidocr");
     setSelect("table_mode", c.docling_table_mode, "accurate");
     setSelect("image_mode", c.docling_image_export_mode, "referenced");
@@ -48,11 +49,12 @@ async function load() {
 $("load-btn").onclick = load;
 
 $("save-btn").onclick = async () => {
-  const payload = {
-    docling_base_url: $("docling_url").value.trim(),
-    llm_base_url: $("llm_base_url").value.trim(),
-    llm_model: $("model-select").value.trim() || "",
-    docling_ocr_engine: $("ocr_engine").value,
+    const payload = {
+      docling_base_url: $("docling_url").value.trim(),
+      llm_base_url: $("llm_base_url").value.trim(),
+      llm_model: $("model-select").value.trim() || "",
+      llm_role: $("llm_role").value,
+      docling_ocr_engine: $("ocr_engine").value,
     docling_table_mode: $("table_mode").value,
     docling_image_export_mode: $("image_mode").value,
     max_concurrent_conversions: parseInt($("max_conc").value, 10) || 5,

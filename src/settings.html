@@ -42,6 +42,12 @@
         <input type="password" id="llm_api_key" placeholder="留空则不修改已保存的 Key" />
       </label>
 
+      <label class="field" style="flex:1 1 100%">
+        <span>LLM 角色定义</span>
+        <textarea id="llm_role" rows="3" placeholder="定义 LLM 的身份与作答风格（如：你是一个严谨的文档数据助理…）；留默认即可，清空则使用内置默认角色。"></textarea>
+        <small class="muted">该角色会作为系统提示词前缀注入所有 LLM 调用（表格抽取 / 汇总表生成 / 会话问答）。不填时自动使用内置默认角色。</small>
+      </label>
+
       <div class="row">
         <label class="field">
           <span>OCR 引擎</span>

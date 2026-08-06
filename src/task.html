@@ -80,7 +80,8 @@
       </p>
       <p class="muted" style="margin:0 0 10px;font-size:12px;line-height:1.6;background:#fff7f0;border-left:3px solid #f7a14a;padding:6px 10px;border-radius:4px">
         <b>结合原始生成记录调整：</b>会话在汇总表上下文之外，还会自动把「本次汇总表 LLM 调用记录」中
-        <b>发起的提示词</b>与<b>原始回复</b>显示在本会话内容顶部（见下方会话框内的「本次汇总表 LLM 调用记录」块）。当你要求调整 / 修正 / 补全汇总表时，模型会参照当初的字段口径、单位、照抄原文等约束，保持与原始生成一致。
+        <b>发起的提示词</b>与<b>原始回复</b>作为本会话的 LLM 上下文（不单独展示），随每次问答注入模型。当你要求调整 / 修正 / 补全汇总表时，模型会参照当初的字段口径、单位、照抄原文等约束，保持与原始生成一致。
+        <b>清空会话</b>只清空对话历史、不清除这两条记录；<b>重新生成汇总表</b>时会刷新它们。
       </p>
       <p class="muted" style="margin:0 0 10px;font-size:12px;line-height:1.6;background:#f6f8ff;border-left:3px solid #4a6cf7;padding:6px 10px;border-radius:4px">
         <b>按指令重新生成数据：</b>在输入框里写下修正要求（如「补全第 3 行缺失的金额字段」「统一各文件甲方写法 / 修正不一致数据」），再点

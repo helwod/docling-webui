@@ -109,6 +109,14 @@ def _strip_labels_from_result(result):
                                 row[idx] = _strip_cell_label(row[idx], h)
     return result
 
+# LLM 角色定义默认值（用户可在「设置」中覆盖）。
+# 作为系统提示词的「角色前缀」注入，统一所有 LLM 调用的身份与作答风格。
+DEFAULT_LLM_ROLE = (
+    "你是一个严谨、专业的文档与表格数据助理。"
+    "你擅长从 OCR 识别的文本中准确抽取结构化字段信息；回答用户问题时使用简体中文、"
+    "条理清晰、简明扼要；在抽取或修正数据时严格照实、不编造、不臆测。"
+)
+
 SYSTEM_PROMPT = """你是一个表格数据提取助手。
 你的任务是分析经过 OCR 处理的 Markdown 内容，并将其中的结构化表格数据提取为 JSON 格式。
 
@@ -317,6 +325,17 @@ class LLMService:
     def __init__(self, setting_repo: SettingRepo):
         self.setting_repo = setting_repo
 
+    async def _system_with_role(self, base_prompt: str) -> str:
+        """把「LLM 角色定义」前置到系统提示词。
+
+        读取设置中的 llm_role；为空（未设置）时回退到 DEFAULT_LLM_ROLE。
+        这样既支持用户自定义角色，又保证不配置时也有合理的默认角色。
+        """
+        role = (await self.setting_repo.get("llm_role") or "").strip()
+        if not role:
+            role = DEFAULT_LLM_ROLE
+        return f"{role}\n\n{base_prompt}"
+
     async def _get_credentials(self, model_override=None, base_url_override=None, api_key_override=None):
         """解析当前生效的 key/base_url/model，支持调用方传入覆盖（用于『先测后存』）。"""
         api_key = api_key_override or (await self.setting_repo.get("llm_api_key")) or ""
@@ -444,8 +463,9 @@ class LLMService:
 
         client = self._build_client(api_key, base_url)
 
+        system_content = await self._system_with_role(SYSTEM_PROMPT)
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
                 ocr_md_content=_clean_ocr_md(ocr_md_content)
             )},
@@ -548,7 +568,8 @@ class LLMService:
             n=len(files), documents="\n\n".join(docs)
         )
         # 记录「发起的」提示词（system + user 合并为可读文本），供审计/回溯
-        prompt_text = f"[SYSTEM]\n{BATCH_SYSTEM_PROMPT}\n\n[USER]\n{user_prompt}"
+        system_prompt = await self._system_with_role(BATCH_SYSTEM_PROMPT)
+        prompt_text = f"[SYSTEM]\n{system_prompt}\n\n[USER]\n{user_prompt}"
 
         api_key, base_url, model = await self._get_credentials()
         if not api_key or api_key == "your-api-key-here":
@@ -562,7 +583,7 @@ class LLMService:
 
         client = self._build_client(api_key, base_url)
         messages = [
-            {"role": "system", "content": BATCH_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
         content, llm_err = await self._chat_json(client, model, messages=messages, timeout=120)
@@ -659,7 +680,8 @@ class LLMService:
             "④ 字段名使用中文业务名称，所有行列名一致；\n"
             "⑤ 只返回合法 JSON，不要附带解释说明。"
         )
-        prompt_text = f"[SYSTEM]\n{REGEN_SYSTEM_PROMPT}\n\n[USER]\n{user_prompt}"
+        system_prompt = await self._system_with_role(REGEN_SYSTEM_PROMPT)
+        prompt_text = f"[SYSTEM]\n{system_prompt}\n\n[USER]\n{user_prompt}"
 
         api_key, base_url, model = await self._get_credentials(model_override)
         if not api_key or api_key == "your-api-key-here":
@@ -673,7 +695,7 @@ class LLMService:
 
         client = self._build_client(api_key, base_url)
         messages = [
-            {"role": "system", "content": REGEN_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
         content, llm_err = await self._chat_json(client, model, messages=messages, timeout=120)
