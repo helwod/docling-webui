@@ -9,6 +9,9 @@ const DEFAULT_LLM_ROLE =
   "你擅长从 OCR 识别的文本中准确抽取结构化字段信息；回答用户问题时使用简体中文、" +
   "条理清晰、简明扼要；在抽取或修正数据时严格照实、不编造、不臆测。";
 
+// placeholder 直接取内置默认角色，保证与默认信息一字不差（单一来源，避免与后端 DEFAULT_LLM_ROLE 漂移）
+$("llm_role").placeholder = DEFAULT_LLM_ROLE;
+
 function showMsg(text, type = "info") {
   msgEl.innerHTML = `<div class="msg msg-${type}">${escapeHtml(text)}</div>`;
 }
