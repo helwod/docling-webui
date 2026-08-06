@@ -90,6 +90,7 @@ def _strip_cell_label(value: str, header: str) -> str:
 # 以及被空格拆开的连字符、纯数字串内部。范围覆盖常用汉字、扩展 A、兼容汉字、
 # CJK 标点与全角字符。
 _CJK = r"\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3000-\u303f\uff00-\uffef"
+_ADDR_RE = re.compile(r"地址|住址|addr", re.IGNORECASE)
 
 
 def _normalize_spaces(value):
@@ -148,7 +149,11 @@ def _normalize_result(result):
                         for old_h, new_h in zip(headers, new_headers):
                             val = row.get(old_h)
                             if isinstance(val, str):
-                                val = _strip_cell_label(_normalize_spaces(val), new_h)
+                                norm = _normalize_spaces(val)
+                                # 地址字段（中文）强制去空格：中文地址一律连写，不留空格
+                                if _ADDR_RE.search(new_h) and re.search(_CJK, norm):
+                                    norm = norm.replace(" ", "")
+                                val = _strip_cell_label(norm, new_h)
                             new_row[new_h] = val
                         # 保留不在 headers 中的其它键（保险）
                         for k, v in row.items():
@@ -160,7 +165,10 @@ def _normalize_result(result):
                     elif isinstance(row, (list, tuple)):
                         for idx, h in enumerate(new_headers):
                             if idx < len(row) and isinstance(row[idx], str):
-                                row[idx] = _strip_cell_label(_normalize_spaces(row[idx]), h)
+                                norm = _normalize_spaces(row[idx])
+                                if _ADDR_RE.search(h) and re.search(_CJK, norm):
+                                    norm = norm.replace(" ", "")
+                                row[idx] = _strip_cell_label(norm, h)
                         t["headers"] = new_headers
     return result
 
@@ -207,7 +215,7 @@ DEFAULT_LLM_ROLE = """你是一个严谨、专业的文档与表格数据助手�
      · 编号 / 证件号类：字母+数字组合或长串数字，如 HT-2024-001、430523********4314、No.2024001 → 归入编号类字段（合同编号 / 证书编号 / 公民身份号码 等）。
      · 金额类：含 元/圆/万/¥/$ 或千分位/小数，如 12,500.00、壹万圆整、¥3,000 → 归入金额字段（金额 / 价款 / 金额（大写） 等）。
      · 名称类：具体人名或公司/组织名（张三、某某有限公司）→ 归入名称字段（姓名 / 甲方 / 乙方 等）。
-     · 地址类：含 省/市/区/县/路/号/村/组 等 → 归入地址字段（住址 / 地址 等）。地址在源文档里常因排版折成 2~3 行，抽取时务必【合并为一行、去掉换行与折行产生的多余空格】，不得把换行符带进字段值（合并后仍保留原文真实的分隔，如英文词间隔空格）。
+     · 地址类：含 省/市/区/县/路/号/村/组 等 → 归入地址字段（住址 / 地址 等）。地址在源文档里常因排版折成 2~3 行、且 OCR/排版会在中间插入空格，抽取时务必【合并为一行、并去掉所有多余空格，写成连续字符串】——例如原文 "北京市东城区景山前街4号 紫禁城敬事房" 必须写成 "北京市东城区景山前街4号紫禁城敬事房"，【中文地址中不得保留任何空格】；仅当整段地址确为英文（如 "Room 502, No.5 Apple Street"）时才保留必要的词间隔空格。
      · 电话类：11 位手机号或带区号固话 → 归入电话字段（联系电话 / 手机 等）。
    - 当某段文字没有明确标签、或标签与示例不同（如合同里写「供方」而非「甲方」、写「买受人」而非「乙方」）时，依据【值的类型与上下文】把它归入语义最匹配的业务字段，并为该字段起一个合理的中文业务名。
    - 要点：字段识别靠「这个值是什么」，不是「示例里有没有」。任何新文档都要用这套通用方法推断字段，不要只会认示例中的那几种。
