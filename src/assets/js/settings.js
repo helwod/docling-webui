@@ -2,6 +2,13 @@
 const msgEl = document.getElementById("msg");
 const $ = (id) => document.getElementById(id);
 
+// 内置默认角色（与后端 DEFAULT_LLM_ROLE 保持一致；后端未返回该字段时兜底，
+// 保证「LLM 角色定义」输入框始终显示默认内容，不依赖镜像是否已重建）。
+const DEFAULT_LLM_ROLE =
+  "你是一个严谨、专业的文档与表格数据助理。" +
+  "你擅长从 OCR 识别的文本中准确抽取结构化字段信息；回答用户问题时使用简体中文、" +
+  "条理清晰、简明扼要；在抽取或修正数据时严格照实、不编造、不臆测。";
+
 function showMsg(text, type = "info") {
   msgEl.innerHTML = `<div class="msg msg-${type}">${escapeHtml(text)}</div>`;
 }
@@ -34,8 +41,8 @@ async function load() {
     $("llm_base_url").value = c.llm_base_url || "";
     savedModel = c.llm_model || "";
     if (savedModel) ensureModelOption(savedModel, savedModel + "（已保存）");
-    // 输入框直接显示当前生效的角色定义；未自定义时回退到内置默认内容（保证默认文本可见可改）
-    $("llm_role").value = c.llm_role || c.default_llm_role || "";
+    // 输入框直接显示当前生效的角色定义；后端未返回时回退到内置默认内容（保证默认文本可见可改）
+    $("llm_role").value = c.llm_role || c.default_llm_role || DEFAULT_LLM_ROLE;
     setSelect("ocr_engine", c.docling_ocr_engine, "rapidocr");
     setSelect("table_mode", c.docling_table_mode, "accurate");
     setSelect("image_mode", c.docling_image_export_mode, "referenced");
