@@ -74,21 +74,14 @@
     <!-- LLM 继续会话：基于批次汇总表（每行 = 一个文件）上下文多轮对话 -->
     <div class="card">
       <h2>LLM 继续会话 <span class="muted" style="font-weight:400;font-size:13px">（基于本批次汇总表，每行 = 一个文件；可修改调整并继续上下文）</span></h2>
-      <p class="muted" style="margin:0 0 10px;font-size:12px;line-height:1.6">
-        会话上下文按「每个文件一段」组织：每段以 <code>▦ 文件内容开始（行号 N / 文件名：xxx）</code> 开头、
-        以 <code>▦ 文件内容结束（行号 N）</code> 结尾，块内为「字段名: 字段值」。模型会先判定问题涉及哪个文件，再只引用该段内容作答。
-      </p>
-      <p class="muted" style="margin:0 0 10px;font-size:12px;line-height:1.6;background:#fff7f0;border-left:3px solid #f7a14a;padding:6px 10px;border-radius:4px">
-        <b>会话内容构成：</b>本面板顶部展示当前生效的<b>系统角色定义</b>；你的每条消息会标注为
-        <b>初始内容</b>（第一条）或<b>继续内容</b>（后续）——普通问答与「按指令重新生成」的指令都遵循此结构。
-        此外，会话在汇总表上下文之外，还会自动把「本次汇总表 LLM 调用记录」中
-        <b>发起的提示词</b>与<b>原始回复</b>作为本会话的 LLM 上下文（不单独展示），随每次问答注入模型。当你要求调整 / 修正 / 补全汇总表时，模型会参照当初的字段口径、单位、照抄原文等约束，保持与原始生成一致。
-        <b>清空会话</b>只清空对话历史、不清除这两条记录；<b>重新生成汇总表</b>时会刷新它们。
-      </p>
-      <p class="muted" style="margin:0 0 10px;font-size:12px;line-height:1.6;background:#f6f8ff;border-left:3px solid #4a6cf7;padding:6px 10px;border-radius:4px">
-        <b>按指令重新生成数据：</b>在输入框里写下修正要求（如「补全第 3 行缺失的金额字段」「统一各文件甲方写法 / 修正不一致数据」），再点
-        <b>按指令重新生成</b>。模型会对照原始 OCR 补全缺失字段、修正差异，并把新汇总表写回本批次（左侧表格同步刷新）。该指令会作为一条<b>初始内容 / 继续内容</b>出现在上方会话中。
-      </p>
+      <details class="chat-help" id="chat-help">
+        <summary>使用说明</summary>
+        <div class="chat-help-body">
+          <p><b>① 上下文组织：</b>每段以 <code>▦ 文件内容开始（行号 N / 文件名：xxx）</code> 开头、<code>▦ 文件内容结束（行号 N）</code> 结尾，块内为「字段名: 字段值」；模型先判定问题涉及哪个文件再作答。</p>
+          <p><b>② 会话内容构成：</b>顶部展示当前生效的<b>系统角色定义</b>；你的每条消息标为<b>初始内容</b>（第一条）或<b>继续内容</b>（后续），普通问答与「按指令重新生成」指令共用此结构。模型还会隐式注入「本次汇总表 LLM 调用记录」的提示词与原始回复作为上下文（不单独展示），保持与原始生成一致；<b>清空</b>只清历史、<b>重新生成汇总表</b>才刷新它们。</p>
+          <p><b>③ 按指令重新生成：</b>在输入框写修正要求（如「补全第 3 行缺失金额」「统一甲方写法」），点<b>按指令重新生成</b>；模型对照原始 OCR 补全 / 修正并写回本批次（左侧表格同步刷新）。</p>
+        </div>
+      </details>
 
       <details class="chat-role-block" id="chat-role-block" open>
         <summary>系统角色定义</summary>
