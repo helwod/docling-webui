@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.db.database import get_db
 from app.repositories.setting_repo import SettingRepo
-from app.services.llm_service import LLMService, DEFAULT_LLM_ROLE
+from app.services.llm_service import LLMService, DEFAULT_LLM_ROLE, _is_legacy_role
 from app.models.schemas import (
     ApiResponse,
     ConfigResponse,
@@ -10,6 +10,12 @@ from app.models.schemas import (
     ConfigUpdate,
     LLMTestRequest,
 )
+
+def _effective_role(raw) -> str:
+    """设置页展示用：为空或仍是旧版一句话角色时，回退为新的内置默认角色。"""
+    role = (raw or "").strip()
+    return DEFAULT_LLM_ROLE if (not role or _is_legacy_role(role)) else role
+
 
 router = APIRouter(prefix="/api/v1/config", tags=["config"])
 
@@ -28,7 +34,7 @@ async def get_config(repo: SettingRepo = Depends(get_repo)):
         llm_base_url=config.get("llm_base_url", ""),
         llm_model=config.get("llm_model", ""),
         llm_api_key_set=llm_api_key_set,
-        llm_role=config.get("llm_role") or DEFAULT_LLM_ROLE,
+        llm_role=_effective_role(config.get("llm_role")),
         default_llm_role=DEFAULT_LLM_ROLE,
         docling_ocr_engine=config.get("docling_ocr_engine", "rapidocr"),
         docling_table_mode=config.get("docling_table_mode", "accurate"),
@@ -55,7 +61,7 @@ async def update_config(
         llm_base_url=config.get("llm_base_url", ""),
         llm_model=config.get("llm_model", ""),
         llm_api_key_set=llm_api_key_set,
-        llm_role=config.get("llm_role") or DEFAULT_LLM_ROLE,
+        llm_role=_effective_role(config.get("llm_role")),
         default_llm_role=DEFAULT_LLM_ROLE,
         docling_ocr_engine=config.get("docling_ocr_engine", "rapidocr"),
         docling_table_mode=config.get("docling_table_mode", "accurate"),

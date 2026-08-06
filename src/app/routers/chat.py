@@ -9,7 +9,7 @@ from app.repositories.batch_repo import BatchRepo
 from app.repositories.file_repo import FileRepo
 from app.repositories.setting_repo import SettingRepo
 from app.repositories.chat_repo import ChatRepo
-from app.services.llm_service import LLMService, DEFAULT_LLM_ROLE
+from app.services.llm_service import LLMService, DEFAULT_LLM_ROLE, _is_legacy_role
 
 router = APIRouter(prefix="/api/v1/batches", tags=["chat"])
 
@@ -28,6 +28,16 @@ CHAT_SYSTEM_PROMPT = """你是一个「文档批次」智能分析助手。
 4. 回答尽量简洁、使用中文，必要时可用要点或表格呈现。
 5. 关于坐标与定位：汇总表只含结构化字段值，不含图像坐标；如需定位某字段在原始文件中的位置，请提示用户到页面右侧「识别的字段」中点击对应字段查看。
 6. 关于「汇总表生成记录」：本会话的 system 上下文中还会附上当初生成该汇总表时【实际发送给模型的提示词】与【模型的原始回复】（若有，见文末「汇总表生成记录」段）。当用户要求调整 / 修正 / 补全汇总表时，请结合其中的字段口径、单位、是否照抄 OCR 原文、空值处理等约束，保持与原始生成一致，不擅自引入新的字段口径或改写规则。"""
+
+def _resolve_role(raw) -> str:
+    """解析生效的「LLM 角色定义」。
+
+    为空或仍是历史遗留的一句话旧角色时回退到 DEFAULT_LLM_ROLE，
+    与 LLMService._system_with_role 的口径保持一致。
+    """
+    role = (raw or "").strip()
+    return DEFAULT_LLM_ROLE if (not role or _is_legacy_role(role)) else role
+
 
 # 汇总表 JSON 塞进 system 的安全上限，避免超长上下文
 _MAX_TABLE_CHARS = 24000
@@ -171,7 +181,7 @@ async def get_chat(batch_id: str, repos=Depends(_get_repos)):
     if not await repos["batch_repo"].get_by_id(batch_id):
         raise HTTPException(status_code=404, detail={"code": 404, "message": "Batch not found"})
     history = await repos["chat_repo"].get_history(batch_id)
-    role = (await repos["setting_repo"].get("llm_role") or "").strip() or DEFAULT_LLM_ROLE
+    role = _resolve_role(await repos["setting_repo"].get("llm_role"))
     return {"code": 0, "data": {"batch_id": batch_id, "history": history, "effective_role": role}}
 
 
@@ -191,7 +201,7 @@ async def send_chat(batch_id: str, body: ChatSend, repos=Depends(_get_repos)):
     chat_repo = repos["chat_repo"]
     history = await chat_repo.get_history(batch_id)
     # 生效的系统角色定义（空则用内置默认），供所有返回路径透出，便于前端在会话内容中展示
-    role = (await repos["setting_repo"].get("llm_role") or "").strip() or DEFAULT_LLM_ROLE
+    role = _resolve_role(await repos["setting_repo"].get("llm_role"))
     is_edit = body.edit_index is not None
     is_regen = bool(body.regenerate)
     user_msg = (body.message or "").strip()

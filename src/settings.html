@@ -43,9 +43,14 @@
       </label>
 
       <label class="field" style="flex:1 1 100%">
-        <span>LLM 角色定义</span>
-        <textarea id="llm_role" rows="3" placeholder="你是一个严谨、专业的文档与表格数据助理。你擅长从 OCR 识别的文本中准确抽取结构化字段信息；回答用户问题时使用简体中文、条理清晰、简明扼要；在抽取或修正数据时严格照实、不编造、不臆测。"></textarea>
-        <small class="muted">该角色会作为系统提示词前缀注入所有 LLM 调用（表格抽取 / 汇总表生成 / 会话问答）。不填时自动使用内置默认角色。</small>
+        <span>LLM 角色定义（系统提示词 / 公共抽取口径）</span>
+        <textarea id="llm_role" rows="16" placeholder="加载内置默认角色中…"></textarea>
+        <small class="muted">
+          这就是发给 LLM 的<b>系统提示词</b>：包含身份设定与通用抽取口径（字段拆分、照抄原文、缺失留空、表格 / 多列处理等）。
+          保存后会自动拼接到四类调用的任务指令之前——<b>单文件表格抽取 / 批量汇总表生成 / 按指令重新生成 / 会话问答</b>；
+          各调用特有的目标与输出格式（如「只返回合法 JSON」）仍由各自任务指令负责，不在此处维护。
+          <b>清空保存则恢复内置默认。</b>
+        </small>
       </label>
 
       <div class="row">

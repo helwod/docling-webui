@@ -2,15 +2,12 @@
 const msgEl = document.getElementById("msg");
 const $ = (id) => document.getElementById(id);
 
-// 内置默认角色（与后端 DEFAULT_LLM_ROLE 保持一致；后端未返回该字段时兜底，
-// 保证「LLM 角色定义」输入框始终显示默认内容，不依赖镜像是否已重建）。
-const DEFAULT_LLM_ROLE =
-  "你是一个严谨、专业的文档与表格数据助理。" +
-  "你擅长从 OCR 识别的文本中准确抽取结构化字段信息；回答用户问题时使用简体中文、" +
-  "条理清晰、简明扼要；在抽取或修正数据时严格照实、不编造、不臆测。";
+// 「LLM 角色定义」即公共抽取口径（对应后端 DEFAULT_LLM_ROLE，内容较长且会随提示词调整而变），
+// 因此不在前端硬编码副本，统一由后端 default_llm_role 下发，避免两处漂移。
+const ROLE_FALLBACK_HINT = "（未能从服务端获取内置默认角色，请重建后端镜像后刷新本页）";
 
-// placeholder 直接取内置默认角色，保证与默认信息一字不差（单一来源，避免与后端 DEFAULT_LLM_ROLE 漂移）
-$("llm_role").placeholder = DEFAULT_LLM_ROLE;
+// placeholder 在拿到后端默认角色后再填充（见 load()），保证与默认信息一字不差
+$("llm_role").placeholder = "加载内置默认角色中…";
 
 function showMsg(text, type = "info") {
   msgEl.innerHTML = `<div class="msg msg-${type}">${escapeHtml(text)}</div>`;
@@ -44,8 +41,10 @@ async function load() {
     $("llm_base_url").value = c.llm_base_url || "";
     savedModel = c.llm_model || "";
     if (savedModel) ensureModelOption(savedModel, savedModel + "（已保存）");
-    // 输入框直接显示当前生效的角色定义；后端未返回时回退到内置默认内容（保证默认文本可见可改）
-    $("llm_role").value = c.llm_role || c.default_llm_role || DEFAULT_LLM_ROLE;
+    // 输入框直接显示当前生效的角色定义（即公共抽取口径），placeholder 同步为服务端内置默认角色
+    const defRole = c.default_llm_role || "";
+    $("llm_role").placeholder = defRole || ROLE_FALLBACK_HINT;
+    $("llm_role").value = c.llm_role || defRole;
     setSelect("ocr_engine", c.docling_ocr_engine, "rapidocr");
     setSelect("table_mode", c.docling_table_mode, "accurate");
     setSelect("image_mode", c.docling_image_export_mode, "referenced");
