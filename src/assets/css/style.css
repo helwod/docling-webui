@@ -400,8 +400,8 @@ img.preview { max-width: 100%; border: 1px solid var(--border); border-radius: 8
 }
 .chat-ops button:hover { background: #eef2f7; color: var(--text); }
 
-/* 系统角色定义块（会话顶部，常驻可折叠） */
-.chat-role-block {
+/* 初始提示词与回复块（本次汇总表 LLM 调用记录，常驻可折叠） */
+.chat-gen-block {
   border: 1px solid var(--border, #e2e8f0);
   background: #f8fafc;
   border-radius: 8px;
@@ -409,17 +409,24 @@ img.preview { max-width: 100%; border: 1px solid var(--border); border-radius: 8
   margin-bottom: 10px;
   font-size: 12.5px;
 }
-.chat-role-block > summary {
+.chat-gen-block > summary {
   cursor: pointer; list-style: none; user-select: none;
   font-weight: 600; color: var(--text);
 }
-.chat-role-block > summary::-webkit-details-marker { display: none; }
-.chat-role-block > summary::before { content: "\25B8 "; color: var(--muted); }
-.chat-role-block[open] > summary::before { content: "\25BE "; }
-.chat-role-body {
-  margin-top: 6px; color: var(--text); line-height: 1.6;
-  white-space: pre-wrap; word-break: break-word;
-  max-height: 160px; overflow: auto;
+.chat-gen-block > summary::-webkit-details-marker { display: none; }
+.chat-gen-block > summary::before { content: "\25B8 "; color: var(--muted); }
+.chat-gen-block[open] > summary::before { content: "\25BE "; }
+.chat-gen-body { margin-top: 6px; }
+.gen-sub { margin-bottom: 8px; }
+.gen-sub:last-child { margin-bottom: 0; }
+.gen-sub-h { font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 3px; }
+.gen-pre {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  background: #f1f5f9; color: var(--text);
+  border: 1px solid var(--border, #e2e8f0); border-radius: 6px;
+  padding: 8px 10px; font-size: 11.5px; line-height: 1.55;
+  max-height: 200px; overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 /* 用户消息初始 / 继续 标签 */
 .chat-role.role-initial { color: var(--primary); font-weight: 600; }

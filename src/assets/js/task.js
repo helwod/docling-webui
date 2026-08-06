@@ -11,13 +11,8 @@ let loadedOcrStatus = null; // 上次加载详情时的 OCR 状态（用于自�
 let recognizedMap = []; // 当前文件识别字段 [{key, value}]，用于右侧点击映射
 let chatHistory = []; // 当前批次的 LLM 会话历史（基于汇总表，每行=一个文件）
 let chatEditIndex = null; // 正在修改的用户消息 seq（null 表示普通发送）
-let chatRole = ""; // 当前生效的系统角色定义（用于会话内容展示：系统角色 + 初始/继续标签）
-
-// 内置默认角色（与后端 DEFAULT_LLM_ROLE、设置页一致；后端未返回 effective_role 时兜底）
-const DEFAULT_LLM_ROLE =
-  "你是一个严谨、专业的文档与表格数据助理。" +
-  "你擅长从 OCR 识别的文本中准确抽取结构化字段信息；回答用户问题时使用简体中文、" +
-  "条理清晰、简明扼要；在抽取或修正数据时严格照实、不编造、不臆测。";
+let genPrompt = ""; // 本次汇总表 LLM 调用记录：发起的提示词（会话内容展示用）
+let genReply = "";  // 本次汇总表 LLM 调用记录：原始回复（会话内容展示用）
 
 const titleEl = document.getElementById("batch-title");
 const metaEl = document.getElementById("batch-meta");
@@ -520,6 +515,8 @@ async function load() {
       `文件：${batch.total_files} / 已处理 ${batch.processed_files}　|　创建：${fmtTime(batch.created_at)}　|　` +
       `LLM：${batch.enable_llm ? "开启" : "未开启"}`;
     batchTable = parseBatchTable(batch.batch_table);
+    genPrompt = batch.table_prompt || "";
+    genReply = batch.table_reply || "";
     const filesData = await API.listFiles(batchId, { page: 1, limit: 200 });
     fileItems = filesData.items || [];
     ensureFilenameColumn(batchTable, fileItems);
@@ -621,7 +618,6 @@ async function loadChat() {
   try {
     const resp = await API.getChat(batchId);
     chatHistory = resp.history || [];
-    chatRole = resp.effective_role || DEFAULT_LLM_ROLE;
     renderChat();
   } catch (e) {
     chatHistory = [];
@@ -629,14 +625,38 @@ async function loadChat() {
   }
 }
 
-function renderChatRole() {
-  const el = document.getElementById("chat-role-body");
-  if (el) el.textContent = chatRole || DEFAULT_LLM_ROLE;
+function renderChatGen() {
+  const el = document.getElementById("chat-gen-body");
+  if (!el) return;
+  const prompt = genPrompt || "";
+  const reply = genReply || "";
+  if (!prompt && !reply) {
+    el.innerHTML =
+      '<div class="muted" style="font-size:12px;padding:2px 0">（暂无记录：本次汇总表尚未生成，或重新生成汇总表后会产生「发起的提示词 / 原始回复」）</div>';
+    return;
+  }
+  const capP = 8000, capR = 4000;
+  const pShown =
+    prompt.length > capP ? prompt.slice(0, capP) + "\n…（发起提示词已截断显示）" : prompt;
+  const rShown =
+    reply.length > capR ? reply.slice(0, capR) + "\n…（原始回复已截断显示）" : reply;
+  let html = "";
+  if (prompt) {
+    html +=
+      '<div class="gen-sub"><div class="gen-sub-h">发起的提示词</div><pre class="gen-pre">' +
+      escapeHtml(pShown) + "</pre></div>";
+  }
+  if (reply) {
+    html +=
+      '<div class="gen-sub"><div class="gen-sub-h">原始回复</div><pre class="gen-pre">' +
+      escapeHtml(rShown) + "</pre></div>";
+  }
+  el.innerHTML = html;
 }
 
 function renderChat() {
   if (!chatBox) return; // 防御：元素未就绪时不抛 null 错误
-  renderChatRole(); // 顶部「系统角色定义」块始终展示当前生效角色
+  renderChatGen(); // 顶部「初始提示词与回复」块展示本次汇总表 LLM 调用记录
   let body;
   if (!chatHistory.length) {
     body = `<div class="chat-empty" id="chat-empty">尚未开始对话。在下方输入问题，例如「汇总表里金额合计是多少？」「第 3 个文件的甲方是谁？」。</div>`;
@@ -712,7 +732,6 @@ async function sendChat() {
   try {
     const resp = await API.postChat(batchId, body);
     chatHistory = resp.history || [];
-    chatRole = resp.effective_role || chatRole;
     chatEditIndex = null;
     chatInput.value = "";
     resetChatSendBtn();
@@ -733,7 +752,6 @@ async function regenerateChat() {
   try {
     const resp = await API.postChat(batchId, { regenerate: true });
     chatHistory = resp.history || [];
-    chatRole = resp.effective_role || chatRole;
     renderChat();
   } catch (e) {
     toast("重新生成失败：" + e.message, "error");
@@ -774,7 +792,6 @@ async function regenTableFromChat() {
       regenerate_table: true,
     });
     chatHistory = resp.history || [];
-    chatRole = resp.effective_role || chatRole;
     chatInput.value = "";
     chatEditIndex = null;
     resetChatSendBtn();

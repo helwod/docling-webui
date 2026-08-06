@@ -78,14 +78,14 @@
         <summary>使用说明</summary>
         <div class="chat-help-body">
           <p><b>① 上下文组织：</b>每段以 <code>▦ 文件内容开始（行号 N / 文件名：xxx）</code> 开头、<code>▦ 文件内容结束（行号 N）</code> 结尾，块内为「字段名: 字段值」；模型先判定问题涉及哪个文件再作答。</p>
-          <p><b>② 会话内容构成：</b>顶部展示当前生效的<b>系统角色定义</b>；你的每条消息标为<b>初始内容</b>（第一条）或<b>继续内容</b>（后续），普通问答与「按指令重新生成」指令共用此结构。模型还会隐式注入「本次汇总表 LLM 调用记录」的提示词与原始回复作为上下文（不单独展示），保持与原始生成一致；<b>清空</b>只清历史、<b>重新生成汇总表</b>才刷新它们。</p>
+          <p><b>② 会话内容构成：</b>顶部展示<b>初始提示词与回复</b>（本次汇总表 LLM 调用记录，含发起的提示词与原始回复）；你的每条消息标为<b>初始内容</b>（第一条）或<b>继续内容</b>（后续），普通问答与「按指令重新生成」指令共用此结构。这些提示词 / 回复会作为上下文随每次问答注入模型，保持与原始生成一致；<b>清空</b>只清历史、<b>重新生成汇总表</b>才刷新它们。</p>
           <p><b>③ 按指令重新生成：</b>在输入框写修正要求（如「补全第 3 行缺失金额」「统一甲方写法」），点<b>按指令重新生成</b>；模型对照原始 OCR 补全 / 修正并写回本批次（左侧表格同步刷新）。</p>
         </div>
       </details>
 
-      <details class="chat-role-block" id="chat-role-block" open>
-        <summary>系统角色定义</summary>
-        <div class="chat-role-body" id="chat-role-body"></div>
+      <details class="chat-gen-block" id="chat-gen-block" open>
+        <summary>初始提示词与回复</summary>
+        <div class="chat-gen-body" id="chat-gen-body"></div>
       </details>
 
       <div class="chat-box" id="chat-box">
