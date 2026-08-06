@@ -266,13 +266,29 @@ def _is_legacy_role(role: str) -> bool:
     return r == "".join(LEGACY_LLM_ROLE.split())
 
 
+# 重构前曾被「整段写入数据库」的旧 SYSTEM_PROMPT 识别标记：身份与任务指令片段混在一起，
+# 并非用户自定义的纯口径。这类角色若被继续当作「自定义角色」使用，会与各任务指令里的
+# 同名片段（如「下面会给你多份文档…」）重复。识别到即回退到新的 DEFAULT_LLM_ROLE（纯口径）。
+_OLD_ROLE_MARKERS = ("下面会给你多份文档", "你是一个表格数据提取助手", "只输出【一张】表格")
+
+
+def _is_old_full_prompt(role: str) -> bool:
+    """判断设置中存的角色是否为『重构前被整段写入的旧的 SYSTEM_PROMPT』（含任务指令片段）。"""
+    if not role:
+        return False
+    return any(m in role for m in _OLD_ROLE_MARKERS)
+
+
 def resolve_llm_role(raw) -> str:
-    """解析生效的「LLM 角色定义」：为空或历史遗留一句话旧角色时回退到 DEFAULT_LLM_ROLE。
+    """解析生效的「LLM 角色定义」：为空 / 历史遗留一句话旧角色 / 重构前被整段写入的旧
+    SYSTEM_PROMPT（含任务指令片段）时，均回退到 DEFAULT_LLM_ROLE。
 
     供 chat.py / config.py 复用，避免多处重复同一套回退口径。
     """
     role = (raw or "").strip()
-    return DEFAULT_LLM_ROLE if (not role or _is_legacy_role(role)) else role
+    if not role or _is_legacy_role(role) or _is_old_full_prompt(role):
+        return DEFAULT_LLM_ROLE
+    return role
 
 
 SYSTEM_PROMPT = """【任务指令 · 单文件表格抽取】
@@ -429,7 +445,7 @@ class LLMService:
         回退到 DEFAULT_LLM_ROLE —— 否则精简后的任务指令会因缺少公共口径而丢失抽取规则。
         """
         role = (await self.setting_repo.get("llm_role") or "").strip()
-        if not role or _is_legacy_role(role):
+        if not role or _is_legacy_role(role) or _is_old_full_prompt(role):
             role = DEFAULT_LLM_ROLE
         return f"{role}\n\n{base_prompt}"
 
