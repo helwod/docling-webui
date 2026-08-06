@@ -219,20 +219,14 @@ async def send_chat(batch_id: str, body: ChatSend, repos=Depends(_get_repos)):
         user_row = await chat_repo.add_message(batch_id, "user", user_msg)
         history.append(user_row)
 
-    # ===== 模式 A：依据用户指令重新生成汇总表并写回批次 =====
+    # ===== 模式 A：依据用户指令生成 / 重新生成汇总表并写回批次 =====
     if body.regenerate_table:
         existing = _parse_json(batch.get("batch_table"))
-        if not isinstance(existing, dict) or not (existing.get("tables")):
-            assistant_text = "该批次尚未生成汇总表，无法根据指令重新生成。请先生成汇总表。"
-            assistant_row = await chat_repo.add_message(batch_id, "assistant", assistant_text)
-            history.append(assistant_row)
-            return {
-                "code": 0,
-                "data": {"batch_id": batch_id, "history": history, "table_updated": False},
-            }
-
+        had_table = isinstance(existing, dict) and bool(existing.get("tables"))
         files = await repos["file_repo"].get_all_for_consolidated(batch_id)
         llm_service = LLMService(repos["setting_repo"])
+        # regenerate_batch_table 在 existing 为空时会退化为「基于 OCR 重新生成」，
+        # 因此即使该批次从未生成 / 之前生成失败，也能在会话里继续按要求重新生成。
         regen = await llm_service.regenerate_batch_table(existing, files, user_msg)
         if regen.get("success"):
             await repos["batch_repo"].update_batch_table(
@@ -245,12 +239,22 @@ async def send_chat(batch_id: str, body: ChatSend, repos=Depends(_get_repos)):
             first = (new_table.get("tables") or [{}])[0]
             n_rows = len(first.get("rows") or [])
             n_cols = len(first.get("headers") or [])
+            verb = "生成" if not had_table else "重新生成"
             assistant_text = (
-                f"已根据指令重新生成汇总表：共 {n_rows} 行、{n_cols} 列，"
+                f"已根据指令{verb}汇总表：共 {n_rows} 行、{n_cols} 列，"
                 "已更新到本批次汇总表，可在左侧表格查看。"
             )
         else:
-            assistant_text = f"重新生成汇总表失败：{regen.get('error')}"
+            # 即便失败也登记回复内容（prompt + raw_reply），便于排查与在会话里继续重试
+            await repos["batch_repo"].update_batch_table(
+                batch_id,
+                json.dumps(
+                    {"error": regen.get("error", "汇总表生成失败")}, ensure_ascii=False
+                ),
+                prompt=regen.get("prompt"),
+                reply=regen.get("raw_reply"),
+            )
+            assistant_text = f"根据指令生成汇总表失败：{regen.get('error')}"
 
         assistant_row = await chat_repo.add_message(batch_id, "assistant", assistant_text)
         history.append(assistant_row)

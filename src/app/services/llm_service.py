@@ -770,41 +770,43 @@ class LLMService:
         原始 OCR 补全缺失字段、修正数据差异 / 不一致，而不是从零提取。
         返回 {"success", "result": {"tables":[...], "file_order":[...]}, "model", "prompt", "raw_reply"}。
         """
-        if not isinstance(existing_table, dict):
-            return {
-                "success": False,
-                "error": "现有汇总表为空，无法据此重新生成",
-                "file_order": [],
-            }
-        tables = existing_table.get("tables") or []
-        if not tables:
-            return {
-                "success": False,
-                "error": "现有汇总表无数据行，无法据此重新生成",
-                "file_order": [],
-            }
-        file_order = existing_table.get("file_order") or []
-
-        # 原始 OCR 文档（清理后），与 format_batch_table 同格式
-        docs, _ = _build_doc_blocks(files)
-
-        existing_json = json.dumps(existing_table, ensure_ascii=False)
-        user_prompt = (
-            "下面是【当前的汇总表 JSON】（每行 = 一个文件，file_order 为该批次文件顺序）：\n\n"
-            f"{existing_json}\n\n"
-            "下面是【各文件的原始 OCR 文本】，用于核对 / 补全：\n\n"
-            f"{chr(10).join(docs)}\n\n"
-            f"用户指令：{instruction}\n\n"
-            "请依据上述指令，对照原始 OCR 重新生成【汇总表 JSON】。要求：\n"
-            "① 仍只输出【一张】表，每行对应一个文件，文件顺序与上面 file_order 一致；\n"
-            "② 对照 OCR 补全缺失字段、修正明显错误 / 不一致（例如同一字段在不同文件写法不一、日期或金额格式异常）；\n"
-            "③ 单元格值严格照抄 OCR 原文写法（含中文大写数字、原编号 / 日期格式），不要把字段名写进值，不要编造；\n"
-            "④ 字段名使用中文业务名称，所有行列名一致；\n"
-            "⑤ 只返回合法 JSON，不要附带解释说明。"
-        )
-        # 同上：落库/展示的「发起的提示词」只保留任务指令（REGEN_SYSTEM_PROMPT），不含共享角色定义
-        system_prompt = await self._system_with_role(REGEN_SYSTEM_PROMPT)
-        prompt_text = f"[SYSTEM]\n{REGEN_SYSTEM_PROMPT}\n\n[USER]\n{user_prompt}"
+        docs, doc_file_order = _build_doc_blocks(files)
+        has_existing = isinstance(existing_table, dict) and bool(existing_table.get("tables"))
+        if has_existing:
+            # 已有汇总表：对照现有表 + 原始 OCR，按指令重新生成（修复 / 补全）
+            existing_json = json.dumps(existing_table, ensure_ascii=False)
+            system_prompt = await self._system_with_role(REGEN_SYSTEM_PROMPT)
+            base_prompt_for_record = REGEN_SYSTEM_PROMPT
+            user_prompt = (
+                "下面是【当前的汇总表 JSON】（每行 = 一个文件，file_order 为该批次文件顺序）：\n\n"
+                f"{existing_json}\n\n"
+                "下面是【各文件的原始 OCR 文本】，用于核对 / 补全：\n\n"
+                f"{chr(10).join(docs)}\n\n"
+                f"用户指令：{instruction}\n\n"
+                "请依据上述指令，对照原始 OCR 重新生成【汇总表 JSON】。要求：\n"
+                "① 仍只输出【一张】表，每行对应一个文件，文件顺序与上面 file_order 一致；\n"
+                "② 对照 OCR 补全缺失字段、修正明显错误 / 不一致（例如同一字段在不同文件写法不一、日期或金额格式异常）；\n"
+                "③ 单元格值严格照抄 OCR 原文写法（含中文大写数字、原编号 / 日期格式），不要把字段名写进值，不要编造；\n"
+                "④ 字段名使用中文业务名称，所有行列名一致；\n"
+                "⑤ 只返回合法 JSON，不要附带任何解释说明。"
+            )
+            file_order = existing_table.get("file_order") or doc_file_order
+        else:
+            # 退化路径：该批次尚未生成过汇总表（或之前生成失败），不再拒绝，
+            # 直接从原始 OCR 重新生成一张表，并把用户指令当作额外的提取 / 整理要求——
+            # 保证「即使之前没生成 / 失败，也能在会话里继续按要求重新生成」。
+            system_prompt = await self._system_with_role(BATCH_SYSTEM_PROMPT)
+            base_prompt_for_record = BATCH_SYSTEM_PROMPT
+            extra = f"\n\n额外要求：{instruction}" if instruction and instruction.strip() else ""
+            user_prompt = (
+                f"下面是 {len(files)} 份文档，每份以 \"===== DOCUMENT {{i}} =====\" 分隔：\n\n"
+                f"{chr(10).join(docs)}\n\n"
+                f"请把这 {len(files)} 份文档整理成一张结构化表格，每份文档一行，保持原有顺序。"
+                f"{extra}\n只返回合法的 JSON，不要附带任何解释说明。"
+            )
+            file_order = doc_file_order
+        # 落库/展示的「发起的提示词」只保留任务指令（不含共享角色定义）
+        prompt_text = f"[SYSTEM]\n{base_prompt_for_record}\n\n[USER]\n{user_prompt}"
 
         api_key, base_url, model = await self._get_credentials(model_override)
         if not api_key or api_key == "your-api-key-here":
