@@ -109,6 +109,28 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001
 | `LLM_MODEL` | 模型名 | `deepseek-chat` |
 | `LLM_API_KEY` | API Key | `sk-xxxxx` |
 
+### 用本地大模型（Ollama）
+
+不想把文档内容发到云端？本项目兼容 OpenAI 接口，可直接对接本机运行的 [Ollama](https://ollama.com)，所有 OCR 后处理与表格整理都在本地完成，无需联网、无需云 Key。
+
+1. 安装并启动 Ollama（默认监听 `11434` 端口，桌面端打开即自动运行）。
+2. 拉取本地模型（本项目默认推荐如下模型）：
+
+   ```bash
+   ollama pull lukey03/qwen3.5-9b-abliterated:latest
+   ```
+
+3. 在 `.env` 里把 LLM 指向 Ollama（注意 `/v1` 后缀不能省，Ollama 走的是 OpenAI 兼容接口）：
+
+   | 配置 | 值 |
+   |------|------|
+   | `LLM_BASE_URL` | `http://localhost:11434/v1` |
+   | `LLM_MODEL` | `lukey03/qwen3.5-9b-abliterated:latest` |
+   | `LLM_API_KEY` | `ollama`（Ollama 不校验 Key，随便填即可，如 `ollama`） |
+
+> **模型说明**：默认推荐 `lukey03/qwen3.5-9b-abliterated:latest`，是一个经过 abliterated（去除安全限制）的 Qwen3.5-9B 本地模型，适合在本机跑中文表格抽取与信息整理。若本地显存不足，可在 Ollama 官网另选更小的模型（如 `qwen2.5:7b` 等），只需把 `LLM_MODEL` 换成对应名字即可，其余配置不变。
+> 同样支持在网页「设置」页直接填入上述地址与模型名，改完即时生效（页面优先级高于 `.env`，并写入数据库）。
+
 > 不想用 LLM？上传时取消勾选「启用 LLM 表格整理」就行，纯 OCR 功能完全不受影响。
 > 设置页改的参数会写入数据库，优先级高于 `.env`——也就是说你可以在网页里直接改配置，不用重启服务。
 
@@ -191,6 +213,9 @@ APP_ROOT_PATH=/docling uvicorn app.main:app --host 0.0.0.0 --port 8001
 
 **LLM 汇总表生成失败？**
 大部分情况是模型返回了流式(SSE)响应但客户端没正确解析。本程序已经做了兼容处理（`stream=True` + 累加 delta）。建议在设置页先用「测试连接」按钮验证通过；另外汇总表对模型的 JSON 输出能力有要求，尽量用支持 structured output 的模型。
+
+**想完全本地化、不联网？**
+用 Ollama（见上文「用本地大模型（Ollama）」）：`LLM_BASE_URL` 填 `http://localhost:11434/v1`、`LLM_MODEL` 填 `lukey03/qwen3.5-9b-abliterated:latest`、`LLM_API_KEY` 随便填（如 `ollama`）。文档内容全程不出本机。
 
 **端口被占了？**
 默认用 8001（8000 太容易被系统服务占）。换端口：`uvicorn app.main:app --port <新端口号>`。
