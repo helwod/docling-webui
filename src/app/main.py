@@ -38,6 +38,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Recovery check failed (non-fatal): {e}")
 
+    # 角色定义自愈：清理 settings 里残留的旧版/重构前角色。
+    # 这类旧值把任务片段（如「下面会给你多份文档…」）也写进了 llm_role，运行时会被当作
+    # 「自定义角色」前置到 system，与各任务指令里的同名片段重复出现。检测到即重置为空，
+    # 回退到内置默认 DEFAULT_LLM_ROLE（纯公共口径，不含任务片段，不重复）。
+    # 关键：docker 的 named volume 在重建镜像时【不会】重新播种，旧镜像写入的旧角色会一直残留，
+    # 故必须在启动时主动清掉，而不是依赖手动进容器改库。
+    try:
+        from app.repositories.setting_repo import SettingRepo
+        from app.services.llm_service import _is_legacy_role, _is_old_full_prompt
+
+        srepo = SettingRepo(db)
+        stored = (await srepo.get("llm_role") or "").strip()
+        if stored and (_is_legacy_role(stored) or _is_old_full_prompt(stored)):
+            await srepo.set("llm_role", "")
+            logger.info("Self-heal: reset stale llm_role (legacy/old full prompt) to default")
+    except Exception as e:
+        logger.warning(f"llm_role self-heal failed (non-fatal): {e}")
+
     # 启动全局队列调度器：paused=0 的 created 批次按 priority DESC, created_at ASC 拉起
     from app.repositories.batch_repo import BatchRepo
     from app.repositories.file_repo import FileRepo
