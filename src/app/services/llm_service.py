@@ -634,9 +634,11 @@ class LLMService:
         user_prompt = BATCH_USER_TEMPLATE.format(
             n=len(files), documents="\n\n".join(docs)
         )
-        # 记录「发起的」提示词（system + user 合并为可读文本），供审计/回溯
+        # 实际发给 LLM 的 system（含公共角色定义 role）；落库/展示的「发起的提示词」只保留
+        # 本次任务指令（BATCH_SYSTEM_PROMPT），避免把冗长的共享角色定义（DEFAULT_LLM_ROLE）
+        # 重复塞进会话生成记录与展示——role 已在会话 system 头部统一注入，无需再重复呈现。
         system_prompt = await self._system_with_role(BATCH_SYSTEM_PROMPT)
-        prompt_text = f"[SYSTEM]\n{system_prompt}\n\n[USER]\n{user_prompt}"
+        prompt_text = f"[SYSTEM]\n{BATCH_SYSTEM_PROMPT}\n\n[USER]\n{user_prompt}"
 
         api_key, base_url, model = await self._get_credentials()
         if not api_key or api_key == "your-api-key-here":
@@ -714,8 +716,9 @@ class LLMService:
             "④ 字段名使用中文业务名称，所有行列名一致；\n"
             "⑤ 只返回合法 JSON，不要附带解释说明。"
         )
+        # 同上：落库/展示的「发起的提示词」只保留任务指令（REGEN_SYSTEM_PROMPT），不含共享角色定义
         system_prompt = await self._system_with_role(REGEN_SYSTEM_PROMPT)
-        prompt_text = f"[SYSTEM]\n{system_prompt}\n\n[USER]\n{user_prompt}"
+        prompt_text = f"[SYSTEM]\n{REGEN_SYSTEM_PROMPT}\n\n[USER]\n{user_prompt}"
 
         api_key, base_url, model = await self._get_credentials(model_override)
         if not api_key or api_key == "your-api-key-here":

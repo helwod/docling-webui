@@ -44,7 +44,7 @@
 
       <label class="field" style="flex:1 1 100%">
         <span>LLM 角色定义（系统提示词 / 公共抽取口径）</span>
-        <textarea id="llm_role" rows="16" placeholder="加载内置默认角色中…"></textarea>
+        <textarea id="llm_role" class="role-box" placeholder="加载内置默认角色中…"></textarea>
         <small class="muted">
           这就是发给 LLM 的<b>系统提示词</b>：包含身份设定与通用抽取口径（字段拆分、照抄原文、缺失留空、表格 / 多列处理等）。
           保存后会自动拼接到四类调用的任务指令之前——<b>单文件表格抽取 / 批量汇总表生成 / 按指令重新生成 / 会话问答</b>；

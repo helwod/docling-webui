@@ -97,6 +97,15 @@ input[type="text"], input[type="number"], input[type="password"], select, textar
   background: #fff;
   color: var(--text);
 }
+/* 角色定义框：内容较长，限高可滚动、可纵向拖拽展开，避免整页被撑得过长 */
+textarea.role-box {
+  min-height: 120px;
+  max-height: 240px;
+  resize: vertical;
+  overflow: auto;
+  line-height: 1.55;
+  font-size: 13px;
+}
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--primary);
