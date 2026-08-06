@@ -197,6 +197,7 @@ class ConfigResponseData(BaseModel):
     llm_model: str
     llm_api_key_set: bool
     llm_role: str = ""
+    default_llm_role: str = ""
     docling_ocr_engine: str
     docling_table_mode: str
     docling_image_export_mode: str

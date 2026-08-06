@@ -34,7 +34,8 @@ async function load() {
     $("llm_base_url").value = c.llm_base_url || "";
     savedModel = c.llm_model || "";
     if (savedModel) ensureModelOption(savedModel, savedModel + "（已保存）");
-    $("llm_role").value = c.llm_role ?? "";
+    // 输入框直接显示当前生效的角色定义；未自定义时回退到内置默认内容（保证默认文本可见可改）
+    $("llm_role").value = c.llm_role || c.default_llm_role || "";
     setSelect("ocr_engine", c.docling_ocr_engine, "rapidocr");
     setSelect("table_mode", c.docling_table_mode, "accurate");
     setSelect("image_mode", c.docling_image_export_mode, "referenced");
