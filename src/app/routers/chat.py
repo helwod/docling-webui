@@ -26,10 +26,14 @@ CHAT_SYSTEM_PROMPT = """你是一个「文档批次」智能分析助手。
 2. 回答前先判断问题涉及哪个（或哪些）文件，只引用对应「文件内容」块内的字段作答；不要跨文件块拼凑，也不要编造不存在的字段或文件。
 3. 若汇总表中没有相关信息，请明确说明「汇总表中未找到相关内容」，不要编造。
 4. 回答尽量简洁、使用中文，必要时可用要点或表格呈现。
-5. 关于坐标与定位：汇总表只含结构化字段值，不含图像坐标；如需定位某字段在原始文件中的位置，请提示用户到页面右侧「识别的字段」中点击对应字段查看。"""
+5. 关于坐标与定位：汇总表只含结构化字段值，不含图像坐标；如需定位某字段在原始文件中的位置，请提示用户到页面右侧「识别的字段」中点击对应字段查看。
+6. 关于「汇总表生成记录」：本会话的 system 上下文中还会附上当初生成该汇总表时【实际发送给模型的提示词】与【模型的原始回复】（若有，见文末「汇总表生成记录」段）。当用户要求调整 / 修正 / 补全汇总表时，请结合其中的字段口径、单位、是否照抄 OCR 原文、空值处理等约束，保持与原始生成一致，不擅自引入新的字段口径或改写规则。"""
 
 # 汇总表 JSON 塞进 system 的安全上限，避免超长上下文
 _MAX_TABLE_CHARS = 24000
+# 生成记录（提示词 / 原始回复）各自的安全上限，避免把原始 OCR 也整段塞进会话上下文
+_GEN_PROMPT_CAP = 8000
+_GEN_REPLY_CAP = 4000
 
 
 class ChatSend(BaseModel):
@@ -106,6 +110,36 @@ def _build_table_context(batch: dict, file_repo: FileRepo) -> str:
     if len(text) > _MAX_TABLE_CHARS:
         text = text[:_MAX_TABLE_CHARS] + "\n…（汇总表内容已截断）"
     return text
+
+
+def _build_generation_record(batch: dict) -> str:
+    """构造「汇总表生成时的 LLM 调用记录」上下文：发起的提示词 + 原始回复。
+
+    用于会话调整时让 LLM 同时看到：当初生成汇总表的指令约束，以及模型原始回复，
+    从而保证『继续会话调整』与原始生成口径一致。两个字段都为空时返回空串（不污染上下文）。
+    """
+    prompt = (batch.get("table_prompt") or "").strip()
+    reply = (batch.get("table_reply") or "").strip()
+    if not prompt and not reply:
+        return ""
+
+    parts = [
+        "===== 汇总表生成记录（以下为当初生成本汇总表时 LLM 实际调用的提示词与原始回复）====="
+    ]
+    if prompt:
+        if len(prompt) > _GEN_PROMPT_CAP:
+            prompt = prompt[:_GEN_PROMPT_CAP] + "\n…（发起提示词已截断）"
+        parts.append("【发起的提示词】\n" + prompt)
+    if reply:
+        if len(reply) > _GEN_REPLY_CAP:
+            reply = reply[:_GEN_REPLY_CAP] + "\n…（原始回复已截断）"
+        parts.append("【原始回复】\n" + reply)
+    parts.append(
+        "说明：上方为当初生成汇总表的真实提示词与模型原始回复。当用户要求调整 / 修正 / 补全"
+        "汇总表时，请结合此处约束（字段名、单位、照抄 OCR 原文、空值处理等）与原始回复口径，"
+        "保持与原始生成一致，不要引入新的字段口径或改写规则。"
+    )
+    return "\n\n".join(parts)
 
 
 def _parse_json(raw):
@@ -231,9 +265,12 @@ async def send_chat(batch_id: str, body: ChatSend, repos=Depends(_get_repos)):
         }
 
     # ===== 模式 B：普通多轮问答（基于汇总表上下文）=====
-    # 组装发给 LLM 的 messages：system（含批次汇总表上下文）+ 完整历史
+    # 组装发给 LLM 的 messages：system（含批次汇总表上下文 + 当初生成表的提示词/原始回复）+ 完整历史
     table_ctx = _build_table_context(batch, repos["file_repo"])
     system_content = CHAT_SYSTEM_PROMPT + "\n\n" + table_ctx
+    gen_rec = _build_generation_record(batch)
+    if gen_rec:
+        system_content += "\n\n" + gen_rec
     llm_messages = [{"role": "system", "content": system_content}]
     llm_messages += [{"role": m["role"], "content": m["content"]} for m in history]
 
