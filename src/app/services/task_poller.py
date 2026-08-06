@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from typing import Optional
 
@@ -6,7 +7,7 @@ from app.repositories.batch_repo import BatchRepo
 from app.repositories.file_repo import FileRepo
 from app.repositories.setting_repo import SettingRepo
 from app.services.docling_service import DoclingService
-from app.services.llm_service import LLMService
+from app.services.llm_service import LLMService, persist_batch_table
 
 logger = logging.getLogger(__name__)
 
@@ -137,30 +138,15 @@ class TaskPoller:
                 return
 
             result = await self.llm_service.format_batch_table(files)
-            import json
-            if result.get("skipped"):
-                await self.batch_repo.update_batch_table(batch_id, None)
-            elif result["success"]:
-                await self.batch_repo.update_batch_table(
-                    batch_id,
-                    json.dumps(result["result"], ensure_ascii=False),
-                    prompt=result.get("prompt"),
-                    reply=result.get("raw_reply"),
-                )
+            out = await persist_batch_table(self.batch_repo, batch_id, result)
+            if out["skipped"]:
+                return
+            if out["success"]:
                 logger.info(
                     f"Batch table generated for {batch_id} (model={result.get('model')}); "
                     f"prompt {len(result.get('prompt') or '')} chars, reply {len(result.get('raw_reply') or '')} chars recorded."
                 )
             else:
-                await self.batch_repo.update_batch_table(
-                    batch_id,
-                    json.dumps(
-                        {"error": result.get("error", "汇总表生成失败")},
-                        ensure_ascii=False,
-                    ),
-                    prompt=result.get("prompt"),
-                    reply=result.get("raw_reply"),
-                )
                 logger.warning(f"Batch table generation failed for {batch_id}: {result.get('error')}")
         except Exception as e:
             logger.exception(f"Batch table generation failed for {batch_id}: {e}")

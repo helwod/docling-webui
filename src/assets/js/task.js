@@ -32,7 +32,7 @@ function parseBatchTable(raw) {
   try { return JSON.parse(raw); } catch (e) { return null; }
 }
 
-// 在汇总表首列注入真实文件名（与后端 _ensure_filename_column 对齐）
+// 在汇总表首列注入真实文件名（与后端 get_batch_table 的表头重排口径保持一致）
 function ensureFilenameColumn(bt, items) {
   if (!bt || !bt.tables) return;
   if (bt.error) return;
@@ -461,7 +461,7 @@ function renderRecognized() {
   renderMarkers();
 }
 
-async function loadFileDetail(fid, force = false) {
+async function loadFileDetail(fid) {
   if (!fid) return;
   try {
     const [detail, segResp] = await Promise.all([
@@ -501,6 +501,14 @@ async function loadFileDetail(fid, force = false) {
   }
 }
 
+function renderMeta(batch) {
+  if (!batch) return;
+  metaEl.innerHTML =
+    `状态：<b>${STATUS_LABEL[batch.status] || batch.status}</b>　|　来源：${escapeHtml(batch.source_type)}　|　` +
+    `文件：${batch.total_files} / 已处理 ${batch.processed_files}　|　创建：${fmtTime(batch.created_at)}　|　` +
+    `LLM：${batch.enable_llm ? "开启" : "未开启"}`;
+}
+
 async function load() {
   if (!batchId) {
     titleEl.textContent = "缺少 batch_id";
@@ -510,10 +518,7 @@ async function load() {
   try {
     const batch = await API.getBatch(batchId);
     titleEl.textContent = batch.name || "（未命名）";
-    metaEl.innerHTML =
-      `状态：<b>${STATUS_LABEL[batch.status] || batch.status}</b>　|　来源：${escapeHtml(batch.source_type)}　|　` +
-      `文件：${batch.total_files} / 已处理 ${batch.processed_files}　|　创建：${fmtTime(batch.created_at)}　|　` +
-      `LLM：${batch.enable_llm ? "开启" : "未开启"}`;
+    renderMeta(batch);
     batchTable = parseBatchTable(batch.batch_table);
     genPrompt = batch.table_prompt || "";
     genReply = batch.table_reply || "";
@@ -541,10 +546,7 @@ async function autoRefresh() {
   if (!batchId) return;
   try {
     const batch = await API.getBatch(batchId);
-    metaEl.innerHTML =
-      `状态：<b>${STATUS_LABEL[batch.status] || batch.status}</b>　|　来源：${escapeHtml(batch.source_type)}　|　` +
-      `文件：${batch.total_files} / 已处理 ${batch.processed_files}　|　创建：${fmtTime(batch.created_at)}　|　` +
-      `LLM：${batch.enable_llm ? "开启" : "未开启"}`;
+    renderMeta(batch);
     const filesData = await API.listFiles(batchId, { page: 1, limit: 200 });
     fileItems = filesData.items || [];
     ensureFilenameColumn(batchTable, fileItems);
@@ -552,7 +554,7 @@ async function autoRefresh() {
     if (currentFileId) {
       const cur = fileItems.find((f) => f.id === currentFileId);
       if (cur && cur.ocr_status !== loadedOcrStatus) {
-        await loadFileDetail(currentFileId, true);
+        await loadFileDetail(currentFileId);
       } else {
         renderRowForFile(currentFileId);
       }
@@ -720,12 +722,9 @@ async function sendChat() {
   const text = chatInput.value.trim();
   if (!text && chatEditIndex == null) return toast("请输入问题", "error");
 
-  const body = {};
+  const body = { message: text };
   if (chatEditIndex != null) {
-    body.message = text;
     body.edit_index = chatEditIndex;
-  } else {
-    body.message = text;
   }
   chatSendBtn.disabled = true;
   chatHint.textContent = "LLM 思考中…";

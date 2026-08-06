@@ -28,7 +28,7 @@ from app.models.schemas import (
 )
 from app.services.upload_service import UploadService
 from app.services.export_service import ExportService
-from app.services.llm_service import LLMService
+from app.services.llm_service import LLMService, persist_batch_table
 from app.config import settings as config_settings
 
 router = APIRouter(prefix="/api/v1/batches", tags=["batches"])
@@ -120,6 +120,22 @@ async def get_batch(batch_id: str, repos=Depends(get_repos)):
     return ApiResponse(data=BatchResponse(**batch))
 
 
+async def _purge_batch_files(batch_id: str) -> None:
+    """删除批次下所有文件的物理存储（在 soft_delete 之后调用）。"""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT stored_path FROM files WHERE batch_id = ?", (batch_id,)
+    )
+    rows = await cursor.fetchall()
+    paths = [r[0] for r in rows if r[0]]
+    for path in paths:
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError:
+            pass
+
+
 @router.delete("/{batch_id}")
 async def delete_batch(batch_id: str, repos=Depends(get_repos)):
     batch = await repos["batch_repo"].get_by_id(batch_id)
@@ -128,21 +144,8 @@ async def delete_batch(batch_id: str, repos=Depends(get_repos)):
             status_code=404, detail={"code": 404, "message": "Batch not found"}
         )
 
-    db = await get_db()
-    cursor = await db.execute(
-        "SELECT stored_path FROM files WHERE batch_id = ?", (batch_id,)
-    )
-    rows = await cursor.fetchall()
-    paths = [r[0] for r in rows if r[0]]
-
     await repos["batch_repo"].soft_delete(batch_id)
-
-    for path in paths:
-        try:
-            if os.path.isfile(path):
-                os.remove(path)
-        except OSError:
-            pass
+    await _purge_batch_files(batch_id)
 
     return ApiResponse(data={"success": True})
 
@@ -150,23 +153,12 @@ async def delete_batch(batch_id: str, repos=Depends(get_repos)):
 @router.post("/batch-delete")
 async def batch_delete(ids: List[str], repos=Depends(get_repos)):
     """批量删除批次。"""
-    db = await get_db()
     for bid in ids:
         batch = await repos["batch_repo"].get_by_id(bid)
         if not batch:
             continue
-        cursor = await db.execute(
-            "SELECT stored_path FROM files WHERE batch_id = ?", (bid,)
-        )
-        rows = await cursor.fetchall()
-        paths = [r[0] for r in rows if r[0]]
         await repos["batch_repo"].soft_delete(bid)
-        for p in paths:
-            try:
-                if os.path.isfile(p):
-                    os.remove(p)
-            except OSError:
-                pass
+        await _purge_batch_files(bid)
     return ApiResponse(data={"success": True, "deleted": len(ids)})
 
 
@@ -360,7 +352,6 @@ async def export_batch(
 
 def _render_batch_table_html(
     batch: dict,
-    table: dict,
     seq_headers: list,
     rows: list,
     file_order: list,
@@ -507,7 +498,7 @@ async def get_batch_table(
 
     if format == "html":
         return _render_batch_table_html(
-            batch, table, seq_headers, rows, file_order, files_map
+            batch, seq_headers, rows, file_order, files_map
         )
 
     # CSV（含 BOM）
@@ -557,23 +548,9 @@ async def rerun_batch_table(
         return ApiResponse(data={"success": False, "error": "批次没有文件"})
 
     result = await llm_service.format_batch_table(files)
-    if result.get("skipped"):
-        await repos["batch_repo"].update_batch_table(batch_id, None)
+    out = await persist_batch_table(repos["batch_repo"], batch_id, result)
+    if out["skipped"]:
         return ApiResponse(data={"success": True, "skipped": True})
-    if result["success"]:
-        await repos["batch_repo"].update_batch_table(
-            batch_id,
-            json.dumps(result["result"], ensure_ascii=False),
-            prompt=result.get("prompt"),
-            reply=result.get("raw_reply"),
-        )
+    if out["success"]:
         return ApiResponse(data={"success": True, "model": result.get("model")})
-    await repos["batch_repo"].update_batch_table(
-        batch_id,
-        json.dumps(
-            {"error": result.get("error", "汇总表生成失败")}, ensure_ascii=False
-        ),
-        prompt=result.get("prompt"),
-        reply=result.get("raw_reply"),
-    )
     return ApiResponse(data={"success": False, "error": result.get("error")})

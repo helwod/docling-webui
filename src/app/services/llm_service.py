@@ -86,8 +86,44 @@ def _strip_cell_label(value: str, header: str) -> str:
     return v
 
 
-def _strip_labels_from_result(result):
-    """对 LLM 返回的 tables 做兜底清洗：去掉单元格值里重复出现的字段名/标签前缀。"""
+# OCR 误插入空格主要出现在 CJK（中文/中文标点/全角字符）与字母/数字之间，
+# 以及被空格拆开的连字符、纯数字串内部。范围覆盖常用汉字、扩展 A、兼容汉字、
+# CJK 标点与全角字符。
+_CJK = r"\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3000-\u303f\uff00-\uffef"
+
+
+def _normalize_spaces(value):
+    """规范化 OCR 在字段名 / 字段值中【误插入】的无意义空格，保留有意义空格。
+
+    规则：
+    - 去掉 CJK（中文 / 中文标点 / 全角字符）之间的空格，以及 CJK 与 ASCII 之间的空格
+      （如 "一 万 圆 整" -> "一万圆整"；"金额 12000" -> "金额12000"）；
+    - 去掉由连字符串接的「字母/数字 - 字母/数字」之间被拆开的空格
+      （如 "HT - 2024 - 001" -> "HT-2024-001"）；
+    - 去掉纯数字 / 数字+*掩码 串内部被拆开的空格
+      （如 "4305 23***** 4314" -> "430523*****4314"）；
+    - 保留英文单词之间的空格（有意义的分隔，如 "Contract No. 2024"）。
+    """
+    if not isinstance(value, str) or not value:
+        return value
+    s = value
+    # 1) CJK 与任意字符之间、CJK 与 CJK 之间的空格
+    s = re.sub(rf"\s+(?=[{_CJK}])", "", s)   # 空格后接 CJK
+    s = re.sub(rf"(?<=[{_CJK}])\s+", "", s)  # CJK 后接空格
+    # 2) 连字符两侧被空格分开的「字母/数字 - 字母/数字」
+    s = re.sub(r"([A-Za-z0-9])\s*-\s*([A-Za-z0-9])", r"\1-\2", s)
+    # 3) 纯数字 / 数字+* 串内部的空格
+    s = re.sub(r"(?<=[0-9*])\s+(?=[0-9*])", "", s)
+    return s.strip()
+
+
+def _normalize_result(result):
+    """对 LLM 返回的 tables 做兜底清洗：
+    1) 去掉单元格值里重复出现的字段名/标签前缀（_strip_cell_label）；
+    2) 去掉 OCR 在字段名与字段值中【误插入】的无意义空格（_normalize_spaces），
+       保持中文连写、编号/日期/金额原貌，仅保留原文有意义的分隔。
+    表头同样去空格，并重映射 dict 行的键，保持 headers 与 row 对齐。
+    """
     if isinstance(result, dict):
         tables = result.get("tables")
         if isinstance(tables, list):
@@ -98,15 +134,28 @@ def _strip_labels_from_result(result):
                 rows = t.get("rows") or []
                 if not headers or not rows:
                     continue
+                # 表头去无意义空格（headers 与 row 键需同步更新）
+                new_headers = [_normalize_spaces(h) for h in headers]
                 for row in rows:
                     if isinstance(row, dict):
-                        for h in headers:
-                            if h in row and isinstance(row[h], str):
-                                row[h] = _strip_cell_label(row[h], h)
+                        new_row = {}
+                        for old_h, new_h in zip(headers, new_headers):
+                            val = row.get(old_h)
+                            if isinstance(val, str):
+                                val = _strip_cell_label(_normalize_spaces(val), new_h)
+                            new_row[new_h] = val
+                        # 保留不在 headers 中的其它键（保险）
+                        for k, v in row.items():
+                            if k not in headers:
+                                new_row[_normalize_spaces(k) if isinstance(k, str) else k] = v
+                        row.clear()
+                        row.update(new_row)
+                        t["headers"] = new_headers
                     elif isinstance(row, (list, tuple)):
-                        for idx, h in enumerate(headers):
+                        for idx, h in enumerate(new_headers):
                             if idx < len(row) and isinstance(row[idx], str):
-                                row[idx] = _strip_cell_label(row[idx], h)
+                                row[idx] = _strip_cell_label(_normalize_spaces(row[idx]), h)
+                        t["headers"] = new_headers
     return result
 
 # LLM 角色定义默认值（用户可在「设置」中覆盖）。
@@ -123,6 +172,12 @@ DEFAULT_LLM_ROLE = """你是一个严谨、专业的文档与表格数据助手�
      （例如写 "2024.1.5" 不要写 "2024-01-05"；写 "HT-2024-001" 不要写 "HT2024001"；写 "12,500.00" 不要写 "12500"）。
    - 中文大写数字保持原文（例如 "壹万圆整" 保持 "壹万圆整"）。
    - 仅当来源明确给出计算或合计时才计算/推导数值，否则保留原文照抄。
+   - 注意：『保持原文写法』指保持源 OCR 中【真实】的写法，不包括 OCR 识别时【误插入】的无意义空格：
+     例如 OCR 把 "HT-2024-001" 识别成 "HT - 2024 - 001"、把 "430523********4314" 识别成 "4305 23***** 4314"、
+     把 "壹万圆整" 识别成 "一 万 圆 整"、把 "12,500.00" 识别成 "12, 500.00"，这些多余空格都【不是】真实写法，
+     抽取时应直接去掉（连写为 HT-2024-001 / 430523********4314 / 壹万圆整 / 12,500.00）。
+     即：凡是 OCR 在字母/数字/中文之间【无故插入】的空格都应去掉；只有原文【本来就有】的有意义空格（如英文单词间隔）才保留。
+     （系统也会对抽取结果做一道后处理：自动去掉这类无意义空格，双保险。）
 3. 【核心】提取每个值时，必须先判断它「是不是有效数据」，再决定写什么：
    - 区分两类内容：
      · 字段标签（不是数据）：字段名、表头、行标题、带冒号的行首，例如 "合同编号"、"甲方（盖章）："、"签订日期"、"金额（大写）"。它们是占位/说明，不是可填写的事实。
@@ -191,6 +246,15 @@ def _is_legacy_role(role: str) -> bool:
         return True
     r = "".join(role.split())  # 忽略空白差异
     return r == "".join(LEGACY_LLM_ROLE.split())
+
+
+def resolve_llm_role(raw) -> str:
+    """解析生效的「LLM 角色定义」：为空或历史遗留一句话旧角色时回退到 DEFAULT_LLM_ROLE。
+
+    供 chat.py / config.py 复用，避免多处重复同一套回退口径。
+    """
+    role = (raw or "").strip()
+    return DEFAULT_LLM_ROLE if (not role or _is_legacy_role(role)) else role
 
 
 SYSTEM_PROMPT = """【任务指令 · 单文件表格抽取】
@@ -274,6 +338,65 @@ REGEN_SYSTEM_PROMPT = """【任务指令 · 按修正指令重新生成汇总表
     }
   ]
 }"""
+
+
+# ---- 汇总表文档块构建 / 失败返回 / 落库 等共用辅助（消除 batches.py / task_poller 重复）----
+
+def _build_doc_blocks(files: list) -> tuple:
+    """把文件列表整理成注入 LLM 的 DOCUMENT 文档块（清理后 OCR + 文件名标记），
+    同时返回与输入顺序一致的 file_order（文件 id 列表）。
+    """
+    docs, file_order = [], []
+    for i, f in enumerate(files, 1):
+        content = (f.get("ocr_md_content") or "").strip()
+        if not content or f.get("ocr_status") != "completed":
+            content = f"[OCR 未完成或失败：{f.get('original_filename')}]"
+        else:
+            # 过滤空行与 Markdown 格式标记，降低提示词噪声与 token 占用
+            content = _clean_ocr_md(content)
+        docs.append(
+            f"===== DOCUMENT {i} (文件名: {f.get('original_filename')}) =====\n{content}"
+        )
+        file_order.append(f.get("id"))
+    return docs, file_order
+
+
+def _fail(error: str, prompt: str, raw_reply, file_order: list) -> dict:
+    """构造统一的失败返回字典（替代散落在 format_batch_table / regenerate_batch_table 的 8 处重复）。"""
+    return {
+        "success": False,
+        "error": error,
+        "prompt": prompt,
+        "raw_reply": raw_reply,
+        "file_order": file_order,
+    }
+
+
+async def persist_batch_table(batch_repo, batch_id: str, result: dict) -> dict:
+    """把 LLM 汇总表结果统一落库（消除 batches.py / task_poller 三处重复的成功/跳过/失败分支）。
+
+    返回 {"skipped": bool, "success": bool}，供调用方决定响应 / 日志。
+    """
+    if result.get("skipped"):
+        await batch_repo.update_batch_table(batch_id, None)
+        return {"skipped": True, "success": False}
+    if result.get("success"):
+        await batch_repo.update_batch_table(
+            batch_id,
+            json.dumps(result["result"], ensure_ascii=False),
+            prompt=result.get("prompt"),
+            reply=result.get("raw_reply"),
+        )
+        return {"skipped": False, "success": True}
+    await batch_repo.update_batch_table(
+        batch_id,
+        json.dumps(
+            {"error": result.get("error", "汇总表生成失败")}, ensure_ascii=False
+        ),
+        prompt=result.get("prompt"),
+        reply=result.get("raw_reply"),
+    )
+    return {"skipped": False, "success": False}
 
 
 class LLMService:
@@ -434,7 +557,7 @@ class LLMService:
 
         try:
             result = self._extract_json(content)
-            result = _strip_labels_from_result(result)  # 兜底：去掉值里重复的字段名/标签
+            result = _normalize_result(result)  # 兜底：去标签前缀 + 去 OCR 无意义空格
             return {
                 "success": True,
                 "skipped": False,
@@ -506,19 +629,7 @@ class LLMService:
         if not files:
             return {"success": True, "skipped": True, "result": {"tables": []}, "file_order": []}
 
-        docs = []
-        file_order = []
-        for i, f in enumerate(files, 1):
-            content = (f.get("ocr_md_content") or "").strip()
-            if not content or f.get("ocr_status") != "completed":
-                content = f"[OCR 未完成或失败：{f.get('original_filename')}]"
-            else:
-                # 过滤空行与 Markdown 格式标记，降低提示词噪声与 token 占用
-                content = _clean_ocr_md(content)
-            docs.append(
-                f"===== DOCUMENT {i} (文件名: {f.get('original_filename')}) =====\n{content}"
-            )
-            file_order.append(f.get("id"))
+        docs, file_order = _build_doc_blocks(files)
 
         user_prompt = BATCH_USER_TEMPLATE.format(
             n=len(files), documents="\n\n".join(docs)
@@ -529,13 +640,7 @@ class LLMService:
 
         api_key, base_url, model = await self._get_credentials()
         if not api_key or api_key == "your-api-key-here":
-            return {
-                "success": False,
-                "error": "LLM API key not configured",
-                "prompt": prompt_text,
-                "raw_reply": None,
-                "file_order": file_order,
-            }
+            return _fail("LLM API key not configured", prompt_text, None, file_order)
 
         client = self._build_client(api_key, base_url)
         messages = [
@@ -545,24 +650,12 @@ class LLMService:
         content, llm_err = await self._chat_json(client, model, messages=messages, timeout=120)
         raw_reply = content  # 记录「回复」的原始响应（未解析 JSON 前）
         if llm_err:
-            return {
-                "success": False,
-                "error": f"LLM call failed: {llm_err}",
-                "prompt": prompt_text,
-                "raw_reply": None,
-                "file_order": file_order,
-            }
+            return _fail(f"LLM call failed: {llm_err}", prompt_text, None, file_order)
         if not content:
-            return {
-                "success": False,
-                "error": "Empty LLM response",
-                "prompt": prompt_text,
-                "raw_reply": raw_reply,
-                "file_order": file_order,
-            }
+            return _fail("Empty LLM response", prompt_text, raw_reply, file_order)
         try:
             result = self._extract_json(content)
-            result = _strip_labels_from_result(result)  # 兜底：去掉值里重复的字段名/标签
+            result = _normalize_result(result)  # 兜底：去标签前缀 + 去 OCR 无意义空格
             result["file_order"] = file_order
             return {
                 "success": True,
@@ -574,13 +667,7 @@ class LLMService:
                 "file_order": file_order,
             }
         except Exception as e:
-            return {
-                "success": False,
-                "error": f"LLM 返回无法解析为 JSON：{str(e)}",
-                "prompt": prompt_text,
-                "raw_reply": content,
-                "file_order": file_order,
-            }
+            return _fail(f"LLM 返回无法解析为 JSON：{str(e)}", prompt_text, content, file_order)
 
     async def regenerate_batch_table(
         self,
@@ -611,16 +698,7 @@ class LLMService:
         file_order = existing_table.get("file_order") or []
 
         # 原始 OCR 文档（清理后），与 format_batch_table 同格式
-        docs = []
-        for i, f in enumerate(files, 1):
-            content = (f.get("ocr_md_content") or "").strip()
-            if not content or f.get("ocr_status") != "completed":
-                content = f"[OCR 未完成或失败：{f.get('original_filename')}]"
-            else:
-                content = _clean_ocr_md(content)
-            docs.append(
-                f"===== DOCUMENT {i} (文件名: {f.get('original_filename')}) =====\n{content}"
-            )
+        docs, _ = _build_doc_blocks(files)
 
         existing_json = json.dumps(existing_table, ensure_ascii=False)
         user_prompt = (
@@ -641,13 +719,7 @@ class LLMService:
 
         api_key, base_url, model = await self._get_credentials(model_override)
         if not api_key or api_key == "your-api-key-here":
-            return {
-                "success": False,
-                "error": "LLM API key not configured",
-                "prompt": prompt_text,
-                "raw_reply": None,
-                "file_order": file_order,
-            }
+            return _fail("LLM API key not configured", prompt_text, None, file_order)
 
         client = self._build_client(api_key, base_url)
         messages = [
@@ -657,24 +729,12 @@ class LLMService:
         content, llm_err = await self._chat_json(client, model, messages=messages, timeout=120)
         raw_reply = content
         if llm_err:
-            return {
-                "success": False,
-                "error": f"LLM call failed: {llm_err}",
-                "prompt": prompt_text,
-                "raw_reply": None,
-                "file_order": file_order,
-            }
+            return _fail(f"LLM call failed: {llm_err}", prompt_text, None, file_order)
         if not content:
-            return {
-                "success": False,
-                "error": "Empty LLM response",
-                "prompt": prompt_text,
-                "raw_reply": raw_reply,
-                "file_order": file_order,
-            }
+            return _fail("Empty LLM response", prompt_text, raw_reply, file_order)
         try:
             result = self._extract_json(content)
-            result = _strip_labels_from_result(result)  # 兜底：去掉值里重复的字段名/标签
+            result = _normalize_result(result)  # 兜底：去标签前缀 + 去 OCR 无意义空格
             # 保住 file_order 映射（行 -> 文件），避免重新生成后行与文件错乱
             if not result.get("file_order") and file_order:
                 result["file_order"] = file_order
@@ -688,10 +748,4 @@ class LLMService:
                 "file_order": result.get("file_order", file_order),
             }
         except Exception as e:
-            return {
-                "success": False,
-                "error": f"LLM 返回无法解析为 JSON：{str(e)}",
-                "prompt": prompt_text,
-                "raw_reply": content,
-                "file_order": file_order,
-            }
+            return _fail(f"LLM 返回无法解析为 JSON：{str(e)}", prompt_text, content, file_order)
