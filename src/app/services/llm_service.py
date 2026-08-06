@@ -467,6 +467,13 @@ async def persist_batch_table(batch_repo, batch_id: str, result: dict) -> dict:
     )
     return {"skipped": False, "success": False}
 
+def _json_error(e, content, limit: int = 800) -> str:
+    """构造『JSON 解析失败』的错误文案，并附带模型原始回复片段，便于排查格式问题。"""
+    snippet = (content or "").strip()
+    if snippet:
+        shown = snippet[:limit] + ("…" if len(snippet) > limit else "")
+        return f"LLM 返回无法解析为 JSON：{e}｜模型原始回复（前{limit}字）：{shown}"
+    return f"LLM 返回无法解析为 JSON：{e}（且模型未返回任何内容）"
 
 class LLMService:
     def __init__(self, setting_repo: SettingRepo):
@@ -653,7 +660,7 @@ class LLMService:
         except Exception as e:
             return {
                 "success": False,
-                "error": f"LLM 返回无法解析为 JSON：{str(e)}",
+                "error": _json_error(e, content),
                 "raw_reply": content,
             }
 
@@ -755,7 +762,7 @@ class LLMService:
                 "file_order": file_order,
             }
         except Exception as e:
-            return _fail(f"LLM 返回无法解析为 JSON：{str(e)}", prompt_text, content, file_order)
+            return _fail(_json_error(e, content), prompt_text, content, file_order)
 
     async def regenerate_batch_table(
         self,
@@ -839,4 +846,4 @@ class LLMService:
                 "file_order": result.get("file_order", file_order),
             }
         except Exception as e:
-            return _fail(f"LLM 返回无法解析为 JSON：{str(e)}", prompt_text, content, file_order)
+            return _fail(_json_error(e, content), prompt_text, content, file_order)
