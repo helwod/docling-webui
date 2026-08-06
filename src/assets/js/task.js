@@ -114,16 +114,26 @@ function renderTableIO(batch) {
     prompt: (batch && batch.table_prompt) || null,
     reply: (batch && batch.table_reply) || null,
   };
-  // 记录随会话内容一起渲染
-  renderChat();
+  // 记录不在此处单独渲染，避免与 loadChat 的 renderChat 重复渲染（导致加载变慢）；
+  // load() 会紧接着调用 loadChat() -> renderChat() 统一渲染会话内容（含本记录块）。
+}
+
+// 调用记录展示上限（避免原始回复/提示词过大导致 innerHTML 渲染卡顿）
+const RECORD_CAP = 8000;
+
+function _capText(s) {
+  if (s == null) return "（暂无记录）";
+  const str = String(s);
+  if (str.length <= RECORD_CAP) return escapeHtml(str);
+  return escapeHtml(str.slice(0, RECORD_CAP)) + "\n…（内容较长，已截断显示）";
 }
 
 // 构建「本次汇总表 LLM 调用记录」块（显示在会话内容顶部）
 function buildChatRecordHtml() {
   const { prompt, reply } = chatGenRecord;
   if (!prompt && !reply) return "";
-  const p = prompt ? escapeHtml(prompt) : "（暂无记录）";
-  const r = reply ? escapeHtml(reply) : "（暂无记录）";
+  const p = _capText(prompt);
+  const r = _capText(reply);
   return (
     `<div class="chat-record" id="chat-record">` +
     `<div class="chat-record-head">本次汇总表 LLM 调用记录（发起的提示词 / 原始回复）</div>` +
@@ -658,6 +668,7 @@ async function loadChat() {
 }
 
 function renderChat() {
+  if (!chatBox) return; // 防御：元素未就绪时不抛 null 错误
   const recordHtml = buildChatRecordHtml();
   let body;
   if (!chatHistory.length) {
