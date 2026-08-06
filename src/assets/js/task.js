@@ -16,8 +16,6 @@ const titleEl = document.getElementById("batch-title");
 const metaEl = document.getElementById("batch-meta");
 const summaryEl = document.getElementById("summary-table");
 const summaryMsg = document.getElementById("summary-msg");
-const tablePromptEl = document.getElementById("table-prompt");
-const tableReplyEl = document.getElementById("table-reply");
 const fileListEl = document.getElementById("file-list");
 const imageBox = document.getElementById("image-box");
 const imgHint = document.getElementById("img-hint");
@@ -108,11 +106,32 @@ function renderSummary() {
     renderTable(table.headers, table.rows);
 }
 
+// 汇总表 LLM 调用记录，渲染进会话内容顶部（不单独显示）
+let chatGenRecord = { prompt: null, reply: null };
+
 function renderTableIO(batch) {
-  const prompt = batch && batch.table_prompt;
-  const reply = batch && batch.table_reply;
-  tablePromptEl.textContent = prompt ? prompt : "（暂无记录）";
-  tableReplyEl.textContent = reply ? reply : "（暂无记录）";
+  chatGenRecord = {
+    prompt: (batch && batch.table_prompt) || null,
+    reply: (batch && batch.table_reply) || null,
+  };
+  // 记录随会话内容一起渲染
+  renderChat();
+}
+
+// 构建「本次汇总表 LLM 调用记录」块（显示在会话内容顶部）
+function buildChatRecordHtml() {
+  const { prompt, reply } = chatGenRecord;
+  if (!prompt && !reply) return "";
+  const p = prompt ? escapeHtml(prompt) : "（暂无记录）";
+  const r = reply ? escapeHtml(reply) : "（暂无记录）";
+  return (
+    `<div class="chat-record" id="chat-record">` +
+    `<div class="chat-record-head">本次汇总表 LLM 调用记录（发起的提示词 / 原始回复）</div>` +
+    `<div class="io-grid">` +
+    `<div class="io-col"><h4>发起的（提示词）</h4><pre class="ocr">${p}</pre></div>` +
+    `<div class="io-col"><h4>回复（原始响应）</h4><pre class="ocr">${r}</pre></div>` +
+    `</div></div>`
+  );
 }
 
 function renderRowForFile(fid) {
@@ -589,11 +608,11 @@ document.getElementById("rerun-table").onclick = async () => {
   } finally {
     btn.disabled = false;
   }
-  // 展开并高亮「调用记录」面板，确保用户看到刷新结果
-  const ioDetails = document.querySelector(".table-io");
-  if (ioDetails) {
-    ioDetails.open = true;
-    const panel = ioDetails.querySelector(".io-grid");
+  // 高亮会话内容顶部的「调用记录」块，确保用户看到刷新结果
+  const rec = document.getElementById("chat-record");
+  if (rec) {
+    rec.scrollIntoView({ block: "nearest" });
+    const panel = rec.querySelector(".io-grid");
     if (panel) {
       panel.classList.remove("io-flash");
       void panel.offsetWidth; // 触发重排以重启动画
@@ -620,7 +639,6 @@ document.getElementById("rerun-ocr").onclick = async () => {
 // LLM 会话：基于【批次汇总表】（每行 = 一个文件）的多轮对话，支持编辑调整与继续上下文
 // ---------------------------------------------------------------------------
 const chatBox = document.getElementById("chat-box");
-const chatEmpty = document.getElementById("chat-empty");
 const chatInput = document.getElementById("chat-input");
 const chatHint = document.getElementById("chat-hint");
 const chatSendBtn = document.getElementById("chat-send");
@@ -640,37 +658,40 @@ async function loadChat() {
 }
 
 function renderChat() {
+  const recordHtml = buildChatRecordHtml();
+  let body;
   if (!chatHistory.length) {
-    chatBox.innerHTML = "";
-    chatEmpty.style.display = "";
-    return;
+    body = `<div class="chat-empty" id="chat-empty">尚未开始对话。在下方输入问题，例如「汇总表里金额合计是多少？」「第 3 个文件的甲方是谁？」。</div>`;
+  } else {
+    body = chatHistory
+      .filter((m) => m.role !== "system")
+      .map((m) => {
+        const cls = m.role === "user" ? "me" : "ai";
+        const label = m.role === "user" ? "我" : "AI";
+        const ops =
+          m.role === "user"
+            ? `<div class="chat-ops"><button class="chat-edit" data-seq="${m.seq}">修改</button></div>`
+            : `<div class="chat-ops"><button class="chat-regen" data-seq="${m.seq}">重新生成</button></div>`;
+        return (
+          `<div class="chat-msg ${cls}" data-seq="${m.seq}">` +
+          `<div class="chat-role">${label}</div>` +
+          `<div class="chat-bubble">${escapeHtml(m.content)}</div>` +
+          ops +
+          `</div>`
+        );
+      })
+      .join("");
   }
-  chatEmpty.style.display = "none";
-  chatBox.innerHTML = chatHistory
-    .filter((m) => m.role !== "system")
-    .map((m) => {
-      const cls = m.role === "user" ? "me" : "ai";
-      const label = m.role === "user" ? "我" : "AI";
-      const ops =
-        m.role === "user"
-          ? `<div class="chat-ops"><button class="chat-edit" data-seq="${m.seq}">修改</button></div>`
-          : `<div class="chat-ops"><button class="chat-regen" data-seq="${m.seq}">重新生成</button></div>`;
-      return (
-        `<div class="chat-msg ${cls}" data-seq="${m.seq}">` +
-        `<div class="chat-role">${label}</div>` +
-        `<div class="chat-bubble">${escapeHtml(m.content)}</div>` +
-        ops +
-        `</div>`
-      );
-    })
-    .join("");
-  chatBox.querySelectorAll(".chat-edit").forEach((b) => {
-    b.onclick = () => startEdit(Number(b.getAttribute("data-seq")));
-  });
-  chatBox.querySelectorAll(".chat-regen").forEach((b) => {
-    b.onclick = () => regenerateChat();
-  });
-  chatBox.scrollTop = chatBox.scrollHeight;
+  chatBox.innerHTML = recordHtml + body;
+  if (chatHistory.length) {
+    chatBox.querySelectorAll(".chat-edit").forEach((b) => {
+      b.onclick = () => startEdit(Number(b.getAttribute("data-seq")));
+    });
+    chatBox.querySelectorAll(".chat-regen").forEach((b) => {
+      b.onclick = () => regenerateChat();
+    });
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
 }
 
 function resetChatSendBtn() {
