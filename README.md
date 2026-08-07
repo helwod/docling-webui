@@ -108,6 +108,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001
 | `LLM_BASE_URL` | LLM API 地址（可选） | `https://api.deepseek.com/v1` |
 | `LLM_MODEL` | 模型名 | `deepseek-chat` |
 | `LLM_API_KEY` | API Key | `sk-xxxxx` |
+| `LLM_TIMEOUT` | LLM 调用超时（秒，可选，默认 600） | `600` |
 
 ### 用本地大模型（Ollama）
 
@@ -130,6 +131,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001
 
 > **模型说明**：默认推荐 `lukey03/qwen3.5-9b-abliterated:latest`，是一个经过 abliterated（去除安全限制）的 Qwen3.5-9B 本地模型，适合在本机跑中文表格抽取与信息整理。若本地显存不足，可在 Ollama 官网另选更小的模型（如 `qwen2.5:7b` 等），只需把 `LLM_MODEL` 换成对应名字即可，其余配置不变。
 > 同样支持在网页「设置」页直接填入上述地址与模型名，改完即时生效（页面优先级高于 `.env`，并写入数据库）。
+
+> **本地模型很慢，请耐心等待**：本地 9B 模型生成整张汇总表可能要 1~3 分钟甚至更久，**这不是「没有回复」，而是正在等待模型生成**。前端会显示「LLM 思考中…（本地/较慢模型可能需要更长时间，请耐心等待）」。服务端的 LLM 调用超时默认是 `LLM_TIMEOUT=600` 秒（10 分钟），一般不会中途掐断；若你的模型仍偶发超时，把 `LLM_TIMEOUT` 调大（如 `1200`）即可，也可在网页「设置」里存 `llm_timeout` 覆盖。
 
 > 不想用 LLM？上传时取消勾选「启用 LLM 表格整理」就行，纯 OCR 功能完全不受影响。
 > 设置页改的参数会写入数据库，优先级高于 `.env`——也就是说你可以在网页里直接改配置，不用重启服务。

@@ -576,7 +576,7 @@ document.getElementById("rerun-table").onclick = async () => {
   if (!batchId) return;
   const btn = document.getElementById("rerun-table");
   btn.disabled = true;
-  summaryMsg.textContent = "正在重新生成汇总表…";
+  summaryMsg.textContent = "正在重新生成汇总表…（本地/较慢模型可能需要更长时间，请耐心等待）";
   try {
     await API.rerunBatchTable(batchId);
     // 后端为同步生成（返回时即已写入 DB），直接重新拉取整页数据
@@ -727,7 +727,7 @@ async function sendChat() {
     body.edit_index = chatEditIndex;
   }
   chatSendBtn.disabled = true;
-  chatHint.textContent = "LLM 思考中…";
+  chatHint.textContent = "LLM 思考中…（本地/较慢模型可能需要更长时间，请耐心等待）";
   try {
     const resp = await API.postChat(batchId, body);
     chatHistory = resp.history || [];
@@ -747,7 +747,7 @@ async function regenerateChat() {
   if (!batchId) return;
   const last = [...chatHistory].reverse().find((m) => m.role === "assistant");
   if (!last) return toast("没有可重新生成的回复", "error");
-  chatHint.textContent = "重新生成中…";
+  chatHint.textContent = "重新生成中…（本地/较慢模型可能需要更长时间，请耐心等待）";
   try {
     const resp = await API.postChat(batchId, { regenerate: true });
     chatHistory = resp.history || [];
@@ -784,7 +784,7 @@ async function regenTableFromChat() {
     chatInput.value.trim() ||
     "请检查并补全所有缺失字段、修正各字段之间不一致的数据，重新生成汇总表。";
   chatSendBtn.disabled = true;
-  chatHint.textContent = "正在根据指令重新生成汇总表…";
+  chatHint.textContent = "正在根据指令重新生成汇总表…（本地/较慢模型可能需要更长时间，请耐心等待）";
   try {
     const resp = await API.postChat(batchId, {
       message: text,

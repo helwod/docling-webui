@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from openai import AsyncOpenAI
 from app.repositories.setting_repo import SettingRepo
@@ -502,10 +503,32 @@ class LLMService:
         model = model_override or (await self.setting_repo.get("llm_model")) or "gpt-4o-mini"
         return api_key, base_url, model
 
-    def _build_client(self, api_key: str, base_url: str):
-        return AsyncOpenAI(api_key=api_key, base_url=base_url)
+    def _build_client(self, api_key: str, base_url: str, timeout: int = 600):
+        # max_retries=0：避免本地/慢模型超时时 SDK 自动重试（重试会再次发起完整请求、
+        # 既拖长时间又可能重复生成）。超时统一由 timeout 控制，并在错误提示里告知用户。
+        return AsyncOpenAI(api_key=api_key, base_url=base_url, max_retries=0, timeout=timeout)
 
-    async def _stream_chat(self, client, model, messages, timeout=60, response_format=None):
+    async def _get_timeout(self) -> int:
+        """LLM 调用超时（秒）。
+
+        本地/私有模型（如 Ollama 跑 qwen3.5-9b-abliterated）生成大表很慢，默认给足 600s；
+        可通过设置键 `llm_timeout` 或环境变量 `LLM_TIMEOUT` 覆盖（最小 30s）。
+        """
+        try:
+            v = await self.setting_repo.get("llm_timeout")
+            if v:
+                return max(30, int(str(v).strip()))
+        except Exception:
+            pass
+        env = os.environ.get("LLM_TIMEOUT")
+        if env:
+            try:
+                return max(30, int(env.strip()))
+            except Exception:
+                pass
+        return 600
+
+    async def _stream_chat(self, client, model, messages, timeout=600, response_format=None):
         """统一用流式调用。
 
         部分 OpenAI 兼容端点（如某些本地/私有化部署）即便未请求流式也会强制
@@ -544,7 +567,7 @@ class LLMService:
                     reasoning += rc
         return content or reasoning
 
-    async def _chat_json(self, client, model, messages, timeout=60):
+    async def _chat_json(self, client, model, messages, timeout=600):
         """容错调用 LLM 取 JSON 文本。
 
         部分私有/本地 OpenAI 兼容端点（如自建 vLLM、部分国产模型网关）不支持
@@ -642,11 +665,12 @@ class LLMService:
                 ocr_md_content=_clean_ocr_md(ocr_md_content)
             )},
         ]
-        content, llm_err = await self._chat_json(client, model, messages=messages, timeout=60)
+        timeout = await self._get_timeout()
+        content, llm_err = await self._chat_json(client, model, messages=messages, timeout=timeout)
         if llm_err:
             return {"success": False, "error": f"LLM call failed: {llm_err}"}
         if not content:
-            return {"success": False, "error": "Empty LLM response"}
+            return {"success": False, "error": "Empty LLM response（若使用本地/较慢模型，请调大 LLM 超时时间 LLM_TIMEOUT）"}
 
         try:
             result = self._extract_json(content)
@@ -664,14 +688,17 @@ class LLMService:
                 "raw_reply": content,
             }
 
-    async def chat(self, messages: list[dict], model_override: str = None, timeout: int = 90) -> str:
+    async def chat(self, messages: list[dict], model_override: str = None, timeout: int = None) -> str:
         """多轮对话：messages 为 [{role, content}] 列表（含 system/user/assistant）。
 
         复用统一流式调用；返回拼接后的助手回复文本。
+        timeout 为 None 时取 _get_timeout()（本地/慢模型默认 600s，可用 LLM_TIMEOUT 覆盖）。
         """
         api_key, base_url, model = await self._get_credentials(model_override)
         if not api_key or api_key == "your-api-key-here":
             raise ValueError("LLM API key 未配置")
+        if timeout is None:
+            timeout = await self._get_timeout()
         client = self._build_client(api_key, base_url)
         return await self._stream_chat(client, model, messages=messages, timeout=timeout)
 
@@ -742,12 +769,13 @@ class LLMService:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        content, llm_err = await self._chat_json(client, model, messages=messages, timeout=120)
+        timeout = await self._get_timeout()
+        content, llm_err = await self._chat_json(client, model, messages=messages, timeout=timeout)
         raw_reply = content  # 记录「回复」的原始响应（未解析 JSON 前）
         if llm_err:
             return _fail(f"LLM call failed: {llm_err}", prompt_text, None, file_order)
         if not content:
-            return _fail("Empty LLM response", prompt_text, raw_reply, file_order)
+            return _fail("Empty LLM response（若使用本地/较慢模型，请调大 LLM 超时时间 LLM_TIMEOUT）", prompt_text, raw_reply, file_order)
         try:
             result = self._extract_json(content)
             result = _normalize_result(result)  # 兜底：去标签前缀 + 去 OCR 无意义空格
@@ -824,12 +852,13 @@ class LLMService:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-        content, llm_err = await self._chat_json(client, model, messages=messages, timeout=120)
+        timeout = await self._get_timeout()
+        content, llm_err = await self._chat_json(client, model, messages=messages, timeout=timeout)
         raw_reply = content
         if llm_err:
             return _fail(f"LLM call failed: {llm_err}", prompt_text, None, file_order)
         if not content:
-            return _fail("Empty LLM response", prompt_text, raw_reply, file_order)
+            return _fail("Empty LLM response（若使用本地/较慢模型，请调大 LLM 超时时间 LLM_TIMEOUT）", prompt_text, raw_reply, file_order)
         try:
             result = self._extract_json(content)
             result = _normalize_result(result)  # 兜底：去标签前缀 + 去 OCR 无意义空格
