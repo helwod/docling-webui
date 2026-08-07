@@ -36,6 +36,33 @@ _GEN_PROMPT_CAP = 8000
 _GEN_REPLY_CAP = 4000
 
 
+def _render_tables_markdown(result: dict) -> str:
+    """把汇总表结果渲染为可读 Markdown 表格，便于在 llm 会话的助手回复里直接展示回复内容。"""
+    if not isinstance(result, dict):
+        return ""
+    tables = result.get("tables") or []
+    if not tables:
+        return ""
+    chunks = []
+    multi = len(tables) > 1
+    for i, t in enumerate(tables, 1):
+        headers = t.get("headers") or []
+        rows = t.get("rows") or []
+        if not headers and not rows:
+            continue
+        if multi:
+            chunks.append(f"**表格 {i}**")
+        chunks.append("| " + " | ".join(str(h) for h in headers) + " |")
+        chunks.append("| " + " | ".join("---" for _ in headers) + " |")
+        for r in rows:
+            cells = [(str(c) if c is not None else "") for c in r]
+            if len(cells) < len(headers):
+                cells += [""] * (len(headers) - len(cells))
+            chunks.append("| " + " | ".join(cells) + " |")
+        chunks.append("")
+    return "\n".join(chunks).strip()
+
+
 class ChatSend(BaseModel):
     message: Optional[str] = ""        # 用户消息；regenerate/edit_index 模式下可为空
     edit_index: Optional[int] = None   # 指定要编辑的用户消息 seq（编辑后截断其后所有消息，用新内容重新生成）
@@ -240,10 +267,10 @@ async def send_chat(batch_id: str, body: ChatSend, repos=Depends(_get_repos)):
             n_rows = len(first.get("rows") or [])
             n_cols = len(first.get("headers") or [])
             verb = "生成" if not had_table else "重新生成"
-            assistant_text = (
-                f"已根据指令{verb}汇总表：共 {n_rows} 行、{n_cols} 列，"
-                "已更新到本批次汇总表，可在左侧表格查看。"
-            )
+            md = _render_tables_markdown(new_table)
+            assistant_text = f"已根据指令{verb}汇总表：共 {n_rows} 行、{n_cols} 列，已更新到本批次汇总表。"
+            if md:
+                assistant_text += "\n\n" + md + "\n\n（完整表格可在左侧汇总表查看）"
         else:
             # 即便失败也登记回复内容（prompt + raw_reply），便于排查与在会话里继续重试
             await repos["batch_repo"].update_batch_table(
@@ -254,7 +281,12 @@ async def send_chat(batch_id: str, body: ChatSend, repos=Depends(_get_repos)):
                 prompt=regen.get("prompt"),
                 reply=regen.get("raw_reply"),
             )
+            raw_reply = (regen.get("raw_reply") or "").strip()
             assistant_text = f"根据指令生成汇总表失败：{regen.get('error')}"
+            if raw_reply:
+                shown = raw_reply[:_GEN_REPLY_CAP]
+                tail = "…（已截断）" if len(raw_reply) > _GEN_REPLY_CAP else ""
+                assistant_text += f"\n\n模型原始回复：\n{shown}{tail}"
 
         assistant_row = await chat_repo.add_message(batch_id, "assistant", assistant_text)
         history.append(assistant_row)
