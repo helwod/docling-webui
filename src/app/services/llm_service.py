@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 from openai import AsyncOpenAI
 from app.repositories.setting_repo import SettingRepo
 
@@ -725,7 +726,6 @@ class LLMService:
         if not api_key or api_key == "your-api-key-here":
             return {"ok": False, "error": "LLM API key 未配置"}
         client = self._build_client(api_key, base_url)
-        import time
         start = time.monotonic()
         try:
             sample = await self._stream_chat(
