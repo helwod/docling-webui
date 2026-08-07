@@ -144,8 +144,10 @@ async def delete_batch(batch_id: str, repos=Depends(get_repos)):
             status_code=404, detail={"code": 404, "message": "Batch not found"}
         )
 
-    await repos["batch_repo"].soft_delete(batch_id)
+    # 先清理磁盘物理文件（需读取 files 表拿到 stored_path），再硬删除批次记录；
+    # files / batch_chats 通过外键 ON DELETE CASCADE 一并从 db 中清除。
     await _purge_batch_files(batch_id)
+    await repos["batch_repo"].hard_delete(batch_id)
 
     return ApiResponse(data={"success": True})
 
@@ -157,8 +159,8 @@ async def batch_delete(ids: List[str], repos=Depends(get_repos)):
         batch = await repos["batch_repo"].get_by_id(bid)
         if not batch:
             continue
-        await repos["batch_repo"].soft_delete(bid)
         await _purge_batch_files(bid)
+        await repos["batch_repo"].hard_delete(bid)
     return ApiResponse(data={"success": True, "deleted": len(ids)})
 
 

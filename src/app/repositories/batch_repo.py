@@ -123,3 +123,14 @@ class BatchRepo:
             (now, batch_id),
         )
         await self.db.commit()
+
+    async def hard_delete(self, batch_id: str) -> None:
+        """物理删除批次记录；files / batch_chats 通过外键 ON DELETE CASCADE 一并清除。
+
+        调用前应先清理磁盘物理文件（_purge_batch_files），否则会丢失 stored_path 导致文件残留。
+        """
+        await self.db.execute(
+            "DELETE FROM batches WHERE id = ?",
+            (batch_id,),
+        )
+        await self.db.commit()
